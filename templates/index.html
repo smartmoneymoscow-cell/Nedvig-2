@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🏠 Торги по недвижимости</title>
+    <script src="https://api-maps.yandex.ru/2.1/?apikey={{ yandex_maps_key }}&lang=ru_RU" type="text/javascript"></script>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="app">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <h1>🏠 Торги по недвижимости</h1>
+                <button class="btn-icon" id="toggleSidebar" title="Свернуть">◀</button>
+            </div>
+
+            <!-- Filters -->
+            <div class="filters">
+                <h3>Фильтры</h3>
+
+                <div class="filter-group">
+                    <label>Город</label>
+                    <input type="text" id="filterCity" placeholder="Москва, СПб..." />
+                </div>
+
+                <div class="filter-group">
+                    <label>Тип объекта</label>
+                    <select id="filterType">
+                        <option value="">Все</option>
+                        <option value="apartment">Квартира</option>
+                        <option value="house">Дом</option>
+                        <option value="land">Земельный участок</option>
+                        <option value="commercial">Коммерческая</option>
+                        <option value="room">Комната</option>
+                        <option value="garage">Гараж</option>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label>Статус торгов</label>
+                    <select id="filterStatus">
+                        <option value="">Все</option>
+                        <option value="active">Идут торги</option>
+                        <option value="upcoming">Скоро начнутся</option>
+                        <option value="completed">Завершены</option>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label>Источник</label>
+                    <select id="filterSource">
+                        <option value="">Все</option>
+                        <option value="torgi_gov">torgi.gov.ru</option>
+                        <option value="gosplan">ГосПлан</option>
+                    </select>
+                </div>
+
+                <div class="filter-group range-group">
+                    <label>Цена, ₽</label>
+                    <div class="range-inputs">
+                        <input type="number" id="priceMin" placeholder="От" />
+                        <span>—</span>
+                        <input type="number" id="priceMax" placeholder="До" />
+                    </div>
+                </div>
+
+                <div class="filter-group">
+                    <label>Период публикации</label>
+                    <select id="filterDays">
+                        <option value="7">7 дней</option>
+                        <option value="30" selected>30 дней</option>
+                        <option value="90">90 дней</option>
+                        <option value="365">Год</option>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label>
+                        <input type="checkbox" id="filterHasDiscount" />
+                        Только со скидкой
+                    </label>
+                </div>
+
+                <button class="btn btn-primary" id="applyFilters">Применить</button>
+                <button class="btn btn-secondary" id="resetFilters">Сбросить</button>
+            </div>
+
+            <!-- Stats -->
+            <div class="stats-panel" id="statsPanel">
+                <h3>Статистика</h3>
+                <div id="statsContent">Загрузка...</div>
+            </div>
+
+            <!-- Legend -->
+            <div class="legend">
+                <h3>Легенда (дата публикации)</h3>
+                <div class="legend-item">
+                    <span class="legend-dot" style="background: #e74c3c;"></span> Сегодня
+                </div>
+                <div class="legend-item">
+                    <span class="legend-dot" style="background: #e67e22;"></span> 1-3 дня
+                </div>
+                <div class="legend-item">
+                    <span class="legend-dot" style="background: #f1c40f;"></span> 4-7 дней
+                </div>
+                <div class="legend-item">
+                    <span class="legend-dot" style="background: #2ecc71;"></span> 2-4 недели
+                </div>
+                <div class="legend-item">
+                    <span class="legend-dot" style="background: #3498db;"></span> 1-3 месяца
+                </div>
+                <div class="legend-item">
+                    <span class="legend-dot" style="background: #9b59b6;"></span> 3+ месяца
+                </div>
+            </div>
+
+            <!-- Trigger Scrape -->
+            <div class="actions">
+                <button class="btn btn-accent" id="triggerScrape">🔄 Обновить данные</button>
+                <div id="scrapeStatus"></div>
+            </div>
+        </aside>
+
+        <!-- Map -->
+        <main class="map-container">
+            <div id="map"></div>
+        </main>
+
+        <!-- Property Detail Panel -->
+        <div class="detail-panel" id="detailPanel">
+            <div class="detail-header">
+                <h2 id="detailTitle">—</h2>
+                <button class="btn-icon" id="closeDetail">✕</button>
+            </div>
+            <div id="detailContent"></div>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
