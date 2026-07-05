@@ -79,10 +79,13 @@ app.include_router(api_router)
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     """Serve the main map page."""
-    return templates.TemplateResponse("index.html", {
-        "request": request,
-        "yandex_maps_key": settings.YANDEX_MAPS_API_KEY,
-    })
+    return templates.TemplateResponse(
+        name="index.html",
+        request=request,
+        context={
+            "yandex_maps_key": settings.YANDEX_MAPS_API_KEY or "",
+        },
+    )
 
 
 @app.post("/api/scrape/trigger")
