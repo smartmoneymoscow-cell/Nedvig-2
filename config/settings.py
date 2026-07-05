@@ -38,6 +38,23 @@ class Settings(BaseSettings):
     APP_PORT: int = 8000
     DEBUG: bool = True
 
+    # Dev mode (SQLite fallback)
+    USE_SQLITE: bool = False
+    SQLITE_PATH: str = "estate_auction.db"
+
+    @property
+    def EFFECTIVE_DB_URL(self) -> str:
+        """Return SQLite or PostgreSQL URL depending on config."""
+        if self.USE_SQLITE:
+            return f"sqlite+aiosqlite:///{self.SQLITE_PATH}"
+        return self.DATABASE_URL
+
+    @property
+    def EFFECTIVE_DB_URL_SYNC(self) -> str:
+        if self.USE_SQLITE:
+            return f"sqlite:///{self.SQLITE_PATH}"
+        return self.DATABASE_URL_SYNC
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

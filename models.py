@@ -1,11 +1,14 @@
-"""SQLAlchemy models for estate auction data."""
+"""SQLAlchemy models for estate auction data.
+
+Uses String columns for enum fields (SQLite + PostgreSQL compatible).
+"""
 
 from datetime import datetime, date
 from typing import Optional
 
 from sqlalchemy import (
     Column, Integer, String, Float, DateTime, Date, Text, Boolean,
-    Index, Enum as SQLEnum, JSON, BigInteger
+    Index, JSON, TypeDecorator
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -16,27 +19,58 @@ class Base(DeclarativeBase):
     pass
 
 
+# --- Enums ---
+
 class SourceType(enum.Enum):
     TORGIGOV = "torgi_gov"
     GOSPLAN = "gosplan"
 
 
 class AuctionStatus(enum.Enum):
-    ACTIVE = "active"          # Идут торги
-    UPCOMING = "upcoming"      # Скоро начнутся
-    COMPLETED = "completed"    # Завершены
-    CANCELLED = "cancelled"    # Отменены
+    ACTIVE = "active"
+    UPCOMING = "upcoming"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
 
 
 class PropertyType(enum.Enum):
-    APARTMENT = "apartment"    # Квартира
-    HOUSE = "house"            # Дом
-    LAND = "land"              # Земельный участок
-    COMMERCIAL = "commercial"  # Коммерческая
-    ROOM = "room"              # Комната
-    GARAGE = "garage"          # Гараж/Машиноместо
+    APARTMENT = "apartment"
+    HOUSE = "house"
+    LAND = "land"
+    COMMERCIAL = "commercial"
+    ROOM = "room"
+    GARAGE = "garage"
     OTHER = "other"
 
+
+# --- Enum TypeDecorator (SQLite + PG compatible) ---
+
+class EnumString(TypeDecorator):
+    """Stores Python enum as string in DB. Works on SQLite and PostgreSQL."""
+    impl = String
+    cache_ok = True
+
+    def __init__(self, enum_class, *args, **kwargs):
+        self._enum_class = enum_class
+        super().__init__(*args, **kwargs)
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        if isinstance(value, self._enum_class):
+            return value.value
+        return str(value)
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return None
+        try:
+            return self._enum_class(value)
+        except ValueError:
+            return value
+
+
+# --- Models ---
 
 class AuctionProperty(Base):
     """Объект недвижимости на торгах."""
@@ -45,15 +79,15 @@ class AuctionProperty(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
 
     # Источник данных
-    source: Mapped[SourceType] = mapped_column(SQLEnum(SourceType))
-    source_id: Mapped[str] = mapped_column(String(255))  # ID в источнике
+    source: Mapped[str] = mapped_column(EnumString(SourceType, length=50))
+    source_id: Mapped[str] = mapped_column(String(255))
     source_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Основные характеристики
     title: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    property_type: Mapped[Optional[PropertyType]] = mapped_column(
-        SQLEnum(PropertyType), nullable=True
+    property_type: Mapped[Optional[str]] = mapped_column(
+        EnumString(PropertyType, length=50), nullable=True
     )
 
     # Адрес и координаты
@@ -64,7 +98,7 @@ class AuctionProperty(Base):
     longitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
     # Параметры объекта
-    total_area: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # м²
+    total_area: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     living_area: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     rooms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     floor: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
@@ -73,13 +107,13 @@ class AuctionProperty(Base):
     # Цены
     start_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     current_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    market_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # Оценка ЦИАН
+    market_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     price_per_sqm: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    discount_pct: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # Скидка от рынка
+    discount_pct: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
     # Информация о торгах
-    auction_status: Mapped[Optional[AuctionStatus]] = mapped_column(
-        SQLEnum(AuctionStatus), nullable=True
+    auction_status: Mapped[Optional[str]] = mapped_column(
+        EnumString(AuctionStatus, length=50), nullable=True
     )
     auction_date_start: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     auction_date_end: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
@@ -111,12 +145,12 @@ class AuctionProperty(Base):
     def to_dict(self) -> dict:
         return {
             "id": self.id,
-            "source": self.source.value if self.source else None,
+            "source": self.source.value if isinstance(self.source, SourceType) else self.source,
             "source_id": self.source_id,
             "source_url": self.source_url,
             "title": self.title,
             "description": self.description,
-            "property_type": self.property_type.value if self.property_type else None,
+            "property_type": self.property_type.value if isinstance(self.property_type, PropertyType) else self.property_type,
             "address": self.address,
             "region": self.region,
             "city": self.city,
@@ -132,7 +166,7 @@ class AuctionProperty(Base):
             "market_price": self.market_price,
             "price_per_sqm": self.price_per_sqm,
             "discount_pct": self.discount_pct,
-            "auction_status": self.auction_status.value if self.auction_status else None,
+            "auction_status": self.auction_status.value if isinstance(self.auction_status, AuctionStatus) else self.auction_status,
             "auction_date_start": self.auction_date_start.isoformat() if self.auction_date_start else None,
             "auction_date_end": self.auction_date_end.isoformat() if self.auction_date_end else None,
             "publish_date": self.publish_date.isoformat() if self.publish_date else None,
@@ -152,7 +186,7 @@ class ScrapeLog(Base):
     __tablename__ = "scrape_logs"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    source: Mapped[SourceType] = mapped_column(SQLEnum(SourceType))
+    source: Mapped[str] = mapped_column(EnumString(SourceType, length=50))
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -163,5 +197,5 @@ class ScrapeLog(Base):
     items_new: Mapped[int] = mapped_column(Integer, default=0)
     items_updated: Mapped[int] = mapped_column(Integer, default=0)
     errors: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    status: Mapped[str] = mapped_column(String(50), default="running")  # running, success, error
+    status: Mapped[str] = mapped_column(String(50), default="running")
     proxy_used: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)

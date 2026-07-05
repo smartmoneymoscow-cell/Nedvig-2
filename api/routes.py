@@ -42,20 +42,11 @@ async def get_properties(
     if city:
         filters.append(AuctionProperty.city.ilike(f"%{city}%"))
     if property_type:
-        try:
-            filters.append(AuctionProperty.property_type == PropertyType(property_type))
-        except ValueError:
-            pass
+        filters.append(AuctionProperty.property_type == property_type)
     if status:
-        try:
-            filters.append(AuctionProperty.auction_status == AuctionStatus(status))
-        except ValueError:
-            pass
+        filters.append(AuctionProperty.auction_status == status)
     if source:
-        try:
-            filters.append(AuctionProperty.source == SourceType(source))
-        except ValueError:
-            pass
+        filters.append(AuctionProperty.source == source)
     if price_min is not None:
         filters.append(AuctionProperty.start_price >= price_min)
     if price_max is not None:
@@ -143,15 +134,9 @@ async def get_map_data(
     if city:
         filters.append(AuctionProperty.city.ilike(f"%{city}%"))
     if property_type:
-        try:
-            filters.append(AuctionProperty.property_type == PropertyType(property_type))
-        except ValueError:
-            pass
+        filters.append(AuctionProperty.property_type == property_type)
     if status:
-        try:
-            filters.append(AuctionProperty.auction_status == AuctionStatus(status))
-        except ValueError:
-            pass
+        filters.append(AuctionProperty.auction_status == status)
 
     if days:
         from datetime import timedelta
@@ -179,10 +164,10 @@ async def get_map_data(
             "discount_pct": p.discount_pct,
             "area": p.total_area,
             "rooms": p.rooms,
-            "status": p.auction_status.value if p.auction_status else None,
-            "type": p.property_type.value if p.property_type else None,
+            "status": p.auction_status.value if isinstance(p.auction_status, AuctionStatus) else p.auction_status,
+            "type": p.property_type.value if isinstance(p.property_type, PropertyType) else p.property_type,
             "publish_date": p.publish_date.isoformat() if p.publish_date else None,
-            "source": p.source.value if p.source else None,
+            "source": p.source.value if isinstance(p.source, SourceType) else p.source,
             "url": p.source_url,
         }
         for p in properties
@@ -199,7 +184,7 @@ async def get_stats(session: AsyncSession = Depends(get_session)):
         count = (
             await session.execute(
                 select(func.count(AuctionProperty.id)).where(
-                    AuctionProperty.source == source
+                    AuctionProperty.source == source.value
                 )
             )
         ).scalar()
@@ -210,7 +195,7 @@ async def get_stats(session: AsyncSession = Depends(get_session)):
         count = (
             await session.execute(
                 select(func.count(AuctionProperty.id)).where(
-                    AuctionProperty.auction_status == status
+                    AuctionProperty.auction_status == status.value
                 )
             )
         ).scalar()
