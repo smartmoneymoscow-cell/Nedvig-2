@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🏠 Торги по недвижимости — Превью</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0f1117;color:#e4e6eb;min-height:100vh}
+.header{background:#1a1d27;border-bottom:1px solid #2a2d3a;padding:16px 24px;display:flex;align-items:center;justify-content:space-between}
+.header h1{font-size:20px;font-weight:600}
+.header .badge{background:#4f8cff22;color:#4f8cff;padding:4px 12px;border-radius:12px;font-size:13px}
+.container{display:grid;grid-template-columns:340px 1fr;min-height:calc(100vh - 60px)}
+.sidebar{background:#1a1d27;border-right:1px solid #2a2d3a;padding:20px;overflow-y:auto}
+.stats-card{background:#252836;border-radius:8px;padding:16px;margin-bottom:16px}
+.stats-card h3{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#8b8fa3;margin-bottom:12px}
+.stat-row{display:flex;justify-content:space-between;padding:6px 0;font-size:14px}
+.stat-label{color:#8b8fa3}
+.stat-value{font-weight:600}
+.stat-value.green{color:#2ecc71}
+.stat-value.blue{color:#3498db}
+.stat-value.orange{color:#e67e22}
+.legend{margin-top:20px}
+.legend-item{display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px;color:#8b8fa3}
+.legend-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0}
+.main{padding:20px;overflow-y:auto}
+.cards{display:grid;gap:16px}
+.card{background:#1a1d27;border:1px solid #2a2d3a;border-radius:8px;padding:16px;transition:border-color .2s}
+.card:hover{border-color:#4f8cff}
+.card-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px}
+.card-title{font-size:15px;font-weight:600;flex:1;margin-right:12px}
+.card-price{font-size:18px;font-weight:700;color:#2ecc71;white-space:nowrap}
+.card-body{display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px}
+.card-row{display:flex;justify-content:space-between}
+.card-label{color:#8b8fa3}
+.card-val{font-weight:500}
+.badge-status{display:inline-block;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:500}
+.badge-active{background:#2ecc7122;color:#2ecc71}
+.badge-upcoming{background:#f1c40f22;color:#f1c40f}
+.badge-completed{background:#8b8fa322;color:#8b8fa3}
+.badge-source{font-size:11px;padding:2px 6px;border-radius:4px;background:#4f8cff18;color:#4f8cff}
+.discount{display:inline-block;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:600}
+.discount.pos{background:#2ecc7122;color:#2ecc71}
+.discount.neg{background:#e74c3c22;color:#e74c3c}
+.market-info{margin-top:8px;padding-top:8px;border-top:1px solid #2a2d3a}
+.market-price{color:#4f8cff;font-weight:600}
+.filters{margin-bottom:20px}
+.filters select,.filters input{width:100%;padding:8px 12px;background:#0f1117;border:1px solid #2a2d3a;border-radius:6px;color:#e4e6eb;font-size:13px;margin-top:4px}
+.filters label{font-size:13px;color:#8b8fa3;display:block;margin-bottom:8px}
+.filter-group{margin-bottom:12px}
+.map-placeholder{background:#252836;border-radius:8px;height:400px;display:flex;align-items:center;justify-content:center;color:#8b8fa3;font-size:14px;border:2px dashed #2a2d3a}
+@media(max-width:768px){.container{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>🏠 Торги по недвижимости</h1>
+  <span class="badge">Demo • 7 объектов</span>
+</div>
+<div class="container">
+  <div class="sidebar">
+    <div class="stats-card">
+      <h3>📊 Статистика</h3>
+      <div class="stat-row"><span class="stat-label">Всего объектов</span><span class="stat-value">7</span></div>
+      <div class="stat-row"><span class="stat-label">torgi.gov.ru</span><span class="stat-value">4</span></div>
+      <div class="stat-row"><span class="stat-label">ГосПлан</span><span class="stat-value">3</span></div>
+      <div class="stat-row"><span class="stat-label">Средняя скидка</span><span class="stat-value green">21.2%</span></div>
+      <div class="stat-row"><span class="stat-label">Активные торги</span><span class="stat-value green">4</span></div>
+      <div class="stat-row"><span class="stat-label">Скоро начнутся</span><span class="stat-value orange">2</span></div>
+    </div>
+    <div class="stats-card">
+      <h3>🏙 Топ городов</h3>
+      <div class="stat-row"><span class="stat-label">Москва</span><span class="stat-value">6 <small>(22.1%)</small></span></div>
+      <div class="stat-row"><span class="stat-label">Одинцово</span><span class="stat-value">1 <small>(16.7%)</small></span></div>
+    </div>
+    <div class="legend">
+      <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#8b8fa3;margin-bottom:10px">Легенда (дата публикации)</h3>
+      <div class="legend-item"><span class="legend-dot" style="background:#e74c3c"></span>Сегодня</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#e67e22"></span>1-3 дня</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#f1c40f"></span>4-7 дней</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#2ecc71"></span>2-4 недели</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#3498db"></span>1-3 месяца</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#9b59b6"></span>3+ месяцев</div>
+    </div>
+    <div style="margin-top:20px;padding:16px;background:#252836;border-radius:8px;font-size:13px">
+      <strong>⚠️ API-ключ Яндекс.Карт</strong>
+      <p style="color:#8b8fa3;margin-top:6px">Для отображения карты заполните <code>YANDEX_MAPS_API_KEY</code> в <code>.env</code></p>
+    </div>
+  </div>
+  <div class="main">
+    <div class="map-placeholder">
+      🗺 Яндекс.Карта загрузится здесь при наличии API-ключа<br>
+      <small style="margin-top:8px;color:#4f8cff">7 объектов • Москва + Одинцово</small>
+    </div>
+    <div style="margin-top:20px">
+      <h2 style="font-size:16px;margin-bottom:16px">📋 Объекты на торгах</h2>
+      <div class="cards">
+        <div class="card" style="border-left:3px solid #e74c3c">
+          <div class="card-header">
+            <div class="card-title">Квартира 1-комн., 38 м², Марьино</div>
+            <div class="card-price">6.2 млн ₽</div>
+          </div>
+          <div class="card-body">
+            <div class="card-row"><span class="card-label">Тип</span><span class="card-val">🏢 Квартира</span></div>
+            <div class="card-row"><span class="card-label">Комнат</span><span class="card-val">1</span></div>
+            <div class="card-row"><span class="card-label">Площадь</span><span class="card-val">38 м²</span></div>
+            <div class="card-row"><span class="card-label">Статус</span><span class="badge-status badge-active">Идут торги</span></div>
+          </div>
+          <div class="market-info">
+            <div class="card-row"><span class="card-label">Рынок</span><span class="market-price">7.8 млн ₽</span></div>
+            <div class="card-row"><span class="card-label">Скидка</span><span class="discount pos">−20.5%</span></div>
+            <div class="card-row"><span class="card-label">Источник</span><span class="badge-source">ГосПлан</span></div>
+          </div>
+        </div>
+
+        <div class="card" style="border-left:3px solid #e74c3c">
+          <div class="card-header">
+            <div class="card-title">Квартира 2-комн., 54 м², ул. Тверская</div>
+            <div class="card-price">8.5 млн ₽</div>
+          </div>
+          <div class="card-body">
+            <div class="card-row"><span class="card-label">Тип</span><span class="card-val">🏢 Квартира</span></div>
+            <div class="card-row"><span class="card-label">Комнат</span><span class="card-val">2</span></div>
+            <div class="card-row"><span class="card-label">Площадь</span><span class="card-val">54 м²</span></div>
+            <div class="card-row"><span class="card-label">Статус</span><span class="badge-status badge-active">Идут торги</span></div>
+          </div>
+          <div class="market-info">
+            <div class="card-row"><span class="card-label">Рынок</span><span class="market-price">12.0 млн ₽</span></div>
+            <div class="card-row"><span class="card-label">Скидка</span><span class="discount pos">−29.2%</span></div>
+            <div class="card-row"><span class="card-label">Источник</span><span class="badge-source">torgi.gov.ru</span></div>
+          </div>
+        </div>
+
+        <div class="card" style="border-left:3px solid #e74c3c">
+          <div class="card-header">
+            <div class="card-title">Квартира 3-комн., 78 м², ул. Арбат</div>
+            <div class="card-price">15.0 млн ₽</div>
+          </div>
+          <div class="card-body">
+            <div class="card-row"><span class="card-label">Тип</span><span class="card-val">🏢 Квартира</span></div>
+            <div class="card-row"><span class="card-label">Комнат</span><span class="card-val">3</span></div>
+            <div class="card-row"><span class="card-label">Площадь</span><span class="card-val">78 м²</span></div>
+            <div class="card-row"><span class="card-label">Статус</span><span class="badge-status badge-active">Идут торги</span></div>
+          </div>
+          <div class="market-info">
+            <div class="card-row"><span class="card-label">Рынок</span><span class="market-price">18.5 млн ₽</span></div>
+            <div class="card-row"><span class="card-label">Скидка</span><span class="discount pos">−18.9%</span></div>
+            <div class="card-row"><span class="card-label">Источник</span><span class="badge-source">torgi.gov.ru</span></div>
+          </div>
+        </div>
+
+        <div class="card" style="border-left:3px solid #e74c3c">
+          <div class="card-header">
+            <div class="card-title">Земельный участок 10 соток, Коммунарка</div>
+            <div class="card-price">5.0 млн ₽</div>
+          </div>
+          <div class="card-body">
+            <div class="card-row"><span class="card-label">Тип</span><span class="card-val">🌍 Участок</span></div>
+            <div class="card-row"><span class="card-label">Площадь</span><span class="card-val">1000 м²</span></div>
+            <div class="card-row"><span class="card-label">Статус</span><span class="badge-status badge-active">Идут торги</span></div>
+            <div class="card-row"><span class="card-label">Источник</span><span class="badge-source">torgi.gov.ru</span></div>
+          </div>
+        </div>
+
+        <div class="card" style="border-left:3px solid #f1c40f">
+          <div class="card-header">
+            <div class="card-title">Квартира 4-комн., 110 м², Хамовники</div>
+            <div class="card-price">32.0 млн ₽</div>
+          </div>
+          <div class="card-body">
+            <div class="card-row"><span class="card-label">Тип</span><span class="card-val">🏢 Квартира</span></div>
+            <div class="card-row"><span class="card-label">Комнат</span><span class="card-val">4</span></div>
+            <div class="card-row"><span class="card-label">Площадь</span><span class="card-val">110 м²</span></div>
+            <div class="card-row"><span class="card-label">Статус</span><span class="badge-status badge-upcoming">Скоро</span></div>
+          </div>
+          <div class="market-info">
+            <div class="card-row"><span class="card-label">Рынок</span><span class="market-price">40.0 млн ₽</span></div>
+            <div class="card-row"><span class="card-label">Скидка</span><span class="discount pos">−20.0%</span></div>
+            <div class="card-row"><span class="card-label">Источник</span><span class="badge-source">ГосПлан</span></div>
+          </div>
+        </div>
+
+        <div class="card" style="border-left:3px solid #f1c40f">
+          <div class="card-header">
+            <div class="card-title">Дом 120 м², Одинцовский р-н</div>
+            <div class="card-price">15.0 млн ₽</div>
+          </div>
+          <div class="card-body">
+            <div class="card-row"><span class="card-label">Тип</span><span class="card-val">🏡 Дом</span></div>
+            <div class="card-row"><span class="card-label">Комнат</span><span class="card-val">4</span></div>
+            <div class="card-row"><span class="card-label">Площадь</span><span class="card-val">120 м²</span></div>
+            <div class="card-row"><span class="card-label">Статус</span><span class="badge-status badge-upcoming">Скоро</span></div>
+          </div>
+          <div class="market-info">
+            <div class="card-row"><span class="card-label">Рынок</span><span class="market-price">18.0 млн ₽</span></div>
+            <div class="card-row"><span class="card-label">Скидка</span><span class="discount pos">−16.7%</span></div>
+            <div class="card-row"><span class="card-label">Источник</span><span class="badge-source">ГосПлан</span></div>
+          </div>
+        </div>
+
+        <div class="card" style="border-left:3px solid #8b8fa3">
+          <div class="card-header">
+            <div class="card-title">Нежилое помещение 200 м², Бауманская</div>
+            <div class="card-price">25.0 млн ₽</div>
+          </div>
+          <div class="card-body">
+            <div class="card-row"><span class="card-label">Тип</span><span class="card-val">🏪 Коммерческая</span></div>
+            <div class="card-row"><span class="card-label">Площадь</span><span class="card-val">200 м²</span></div>
+            <div class="card-row"><span class="card-label">Статус</span><span class="badge-status badge-completed">Завершены</span></div>
+            <div class="card-row"><span class="card-label">Источник</span><span class="badge-source">torgi.gov.ru</span></div>
+          </div>
+          <div class="market-info">
+            <div class="card-row"><span class="card-label">Рынок</span><span class="market-price">32.0 млн ₽</span></div>
+            <div class="card-row"><span class="card-label">Скидка</span><span class="discount pos">−21.9%</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

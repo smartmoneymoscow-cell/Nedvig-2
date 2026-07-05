@@ -1,10 +1,13 @@
 """Scraper for torgi.gov.ru — Russian government auction portal.
 
-Handles:
-- API-based search for real estate lots
-- Pagination through result pages
-- Detail page scraping for additional info
-- Anti-bot bypass via TLS fingerprinting + proxy rotation
+Uses the REAL public API discovered via web research:
+GET /new/api/public/lotcards/search
+
+Response structure:
+- content[]: lot cards with nested characteristics
+- pageable: pagination info
+- categoryFacet: category counts
+- totalElements: total count
 """
 
 import re
@@ -22,132 +25,247 @@ from .proxy_manager import proxy_manager
 from models import SourceType, AuctionStatus, PropertyType
 
 
-# torgi.gov.ru search API endpoint
-TORGIGOV_API_URL = "https://torgi.gov.ru/new/public/lots/reg"
-TORGIGOV_SEARCH_API = "https://torgi.gov.ru/new/api/public/lotcards/search"
-TORGIGOV_LOT_API = "https://torgi.gov.ru/new/api/public/lotcards/{lotId}"
 TORGIGOV_BASE = "https://torgi.gov.ru"
+TORGIGOV_SEARCH_API = f"{TORGIGOV_BASE}/new/api/public/lotcards/search"
+TORGIGOV_EXPORT_API = f"{TORGIGOV_BASE}/new/api/public/lotcards/export/excel"
+TORGIGOV_LOT_URL = f"{TORGIGOV_BASE}/new/public/lots/lot"
 
-# Real estate category codes on torgi.gov.ru
-PROPERTY_CATEGORIES = {
-    "apartment": ["жилая", "квартир", "квартира", "комнат"],
-    "house": ["дом", "жилой дом", "усадьб"],
-    "land": ["земель", "участок", "земля"],
-    "commercial": ["нежилая", "коммерч", "офис", "магазин", "помещение"],
-    "garage": ["гараж", "машиноместо", "паркинг"],
+# Real estate category codes on torgi.gov.ru (from actual API facets)
+REAL_ESTATE_CATEGORIES = {
+    "9":    "Жилые помещения",          # Apartments, houses
+    "8":    "Здания",                    # Buildings
+    "11":   "Нежилые помещения",         # Non-residential premises
+    "301":  "Земли населенных пунктов",  # Land in settlements
+    "307":  "Земли с/х назначения",      # Agricultural land
+    "304":  "Земли промышленности",      # Industrial land
+    "406":  "Имущественный комплекс",    # Property complex
+    "10":   "Сооружения",               # Structures
+    "4":    "Объекты незавершённого строительства",  # Unfinished construction
+}
+
+# Status mapping from real API values
+STATUS_MAP = {
+    "PUBLISHED": AuctionStatus.UPCOMING,
+    "APPLICATIONS_SUBMISSION": AuctionStatus.ACTIVE,
+    "DETERMINING_WINNER": AuctionStatus.ACTIVE,
+    "COMPLETED": AuctionStatus.COMPLETED,
+    "CANCELLED": AuctionStatus.CANCELLED,
+    "ANULLED": AuctionStatus.CANCELLED,
 }
 
 
 class TorgiGovScraper(BaseScraper):
-    """Scraper for torgi.gov.ru auction listings."""
+    """Scraper for torgi.gov.ru auction listings using real public API."""
 
     def __init__(self):
         super().__init__("torgi.gov.ru")
         self._api_session = None
 
     def _create_api_session(self):
-        """Create session specifically for the torgi.gov.ru API."""
+        """Create session with correct headers for torgi.gov.ru API."""
         session = self._create_session()
         session.headers.update({
-            "Referer": "https://torgi.gov.ru/new/public/lots/reg",
-            "Origin": "https://torgi.gov.ru",
-            "X-Requested-With": "XMLHttpRequest",
             "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "ru-RU,ru;q=0.9",
+            "Referer": f"{TORGIGOV_BASE}/new/public/lots/reg",
+            "Origin": TORGIGOV_BASE,
+            "OrganizationId": "null",
+            "BranchId": "null",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "same-origin",
         })
         return session
 
-    def _detect_property_type(self, title: str, description: str = "") -> PropertyType:
-        """Detect property type from title and description."""
-        text = f"{title} {description}".lower()
-        for ptype, keywords in PROPERTY_CATEGORIES.items():
-            for kw in keywords:
-                if kw in text:
-                    return PropertyType(ptype)
-        return PropertyType.OTHER
+    def _get_characteristic(self, card: dict, code: str) -> Optional[str]:
+        """Extract a characteristic value by code from the lot card."""
+        for char in card.get("characteristics", []):
+            if char.get("code") == code:
+                val = char.get("characteristicValue")
+                if val is not None:
+                    # Handle multiselect (list of dicts)
+                    if isinstance(val, list) and val and isinstance(val[0], dict):
+                        return val[0].get("name", "")
+                    return str(val)
+        return None
 
-    def _detect_auction_status(self, raw_data: dict) -> AuctionStatus:
-        """Determine auction status from raw data."""
-        status_str = raw_data.get("lotStatus", "").lower()
-        if "завершен" in status_str or "completed" in status_str:
-            return AuctionStatus.COMPLETED
-        if "отменен" in status_str or "cancelled" in status_str:
-            return AuctionStatus.CANCELLED
-        if "идут" in status_str or "active" in status_str:
-            return AuctionStatus.ACTIVE
-        # Check by dates
-        now = datetime.now()
-        end_date = raw_data.get("biddingEndDate")
-        if end_date:
+    def _get_characteristic_float(self, card: dict, code: str) -> Optional[float]:
+        """Extract a numeric characteristic value."""
+        val = self._get_characteristic(card, code)
+        if val is not None:
             try:
-                end_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
-                if end_dt < now:
-                    return AuctionStatus.COMPLETED
+                return float(val)
             except (ValueError, TypeError):
                 pass
-        return AuctionStatus.UPCOMING
+        return None
+
+    def _detect_property_type(self, card: dict) -> PropertyType:
+        """Detect property type from category and characteristics."""
+        category = card.get("category", {})
+        cat_code = category.get("code", "")
+        cat_name = category.get("name", "").lower()
+
+        # Check category
+        if cat_code == "9":  # Жилые помещения
+            living_type = self._get_characteristic(card, "typeLivingQuarters")
+            if living_type:
+                living_type = living_type.lower()
+                if "дом" in living_type:
+                    return PropertyType.HOUSE
+                if "комната" in living_type or "доля" in living_type:
+                    return PropertyType.ROOM
+            return PropertyType.APARTMENT
+
+        if cat_code in ("301", "307", "304"):  # Земли
+            return PropertyType.LAND
+
+        if cat_code in ("8", "10"):  # Здания, сооружения
+            purpose = self._get_characteristic(card, "purposeBuilding")
+            if purpose and "жилое" in purpose.lower():
+                return PropertyType.HOUSE
+            return PropertyType.COMMERCIAL
+
+        if cat_code == "11":  # Нежилые помещения
+            return PropertyType.COMMERCIAL
+
+        if cat_code == "4":  # Объекты незавершённого строительства
+            return PropertyType.OTHER
+
+        # Fallback: check title
+        title = card.get("lotName", "").lower()
+        if any(w in title for w in ["квартир", "комнат"]):
+            return PropertyType.APARTMENT
+        if any(w in title for w in ["дом", "жилой дом"]):
+            return PropertyType.HOUSE
+        if any(w in title for w in ["земельный участок", "участок"]):
+            return PropertyType.LAND
+        if any(w in title for w in ["нежилое", "помещение", "офис"]):
+            return PropertyType.COMMERCIAL
+        if any(w in title for w in ["гараж", "машиноместо"]):
+            return PropertyType.GARAGE
+
+        return PropertyType.OTHER
 
     def _parse_lot_card(self, card: dict) -> dict:
-        """Parse a lot card from the API response."""
+        """Parse a lot card from the real API response."""
+        # Basic info
+        lot_id = card.get("id", "")
         title = card.get("lotName", "")
         description = card.get("lotDescription", "")
 
-        # Parse price
-        start_price = None
-        price_str = card.get("startPrice") or card.get("currentPrice") or card.get("price")
-        if price_str:
+        # Price
+        start_price = card.get("priceMin")
+
+        # Area — extract from characteristics
+        total_area = (
+            self._get_characteristic_float(card, "totalAreaRealty") or
+            self._get_characteristic_float(card, "SquareZU")  # Land area
+        )
+
+        # Rooms — extract from title (e.g., "3-комнатная квартира", "Однокомнатная")
+        rooms = None
+        room_match = re.search(r"(\d+)\s*[-–]?\s*комн", title, re.IGNORECASE)
+        if room_match:
+            rooms = int(room_match.group(1))
+        elif re.search(r"однокомнатн", title, re.IGNORECASE):
+            rooms = 1
+        elif re.search(r"двухкомнатн|двухкомнатн", title, re.IGNORECASE):
+            rooms = 2
+        elif re.search(r"трехкомнатн|трёхкомнатн", title, re.IGNORECASE):
+            rooms = 3
+        elif re.search(r"четырехкомнатн|четырёхкомнатн", title, re.IGNORECASE):
+            rooms = 4
+
+        # Floor — extract from characteristic
+        floor = None
+        location = self._get_characteristic(card, "locationObjectRealty")
+        if location:
+            floor_match = re.search(r"(\d+)\s*этаж", location, re.IGNORECASE)
+            if floor_match:
+                floor = int(floor_match.group(1))
+
+        # Total floors
+        total_floors = None
+        floors_str = self._get_characteristic(card, "numberFloors")
+        if floors_str:
             try:
-                start_price = float(str(price_str).replace(" ", "").replace(",", "."))
+                total_floors = int(floors_str)
             except (ValueError, TypeError):
                 pass
 
-        # Parse area
-        total_area = None
-        area_str = card.get("totalArea") or card.get("area")
-        if area_str:
-            try:
-                total_area = float(str(area_str).replace(" ", "").replace(",", "."))
-            except (ValueError, TypeError):
-                pass
+        # Status
+        lot_status = card.get("lotStatus", "")
+        auction_status = STATUS_MAP.get(lot_status, AuctionStatus.UPCOMING)
 
-        # Parse dates
+        # Dates
         publish_date = None
-        for date_field in ["publishDate", "createDate", "publicationDate"]:
-            raw_date = card.get(date_field)
-            if raw_date:
-                publish_date = self._parse_date(raw_date) or self._parse_datetime(str(raw_date))
-                if publish_date and isinstance(publish_date, datetime):
-                    publish_date = publish_date.date()
-                if publish_date:
-                    break
+        pub_str = card.get("noticeFirstVersionPublicationDate")
+        if pub_str:
+            try:
+                # Format: "2024-05-05T07:02:03.81Z"
+                publish_date = datetime.fromisoformat(pub_str.replace("Z", "+00:00")).date()
+            except (ValueError, TypeError):
+                pass
 
-        auction_start = self._parse_datetime(card.get("biddingStartDate", ""))
-        auction_end = self._parse_datetime(card.get("biddingEndDate", ""))
+        auction_end = None
+        end_str = card.get("biddEndTime")
+        if end_str:
+            try:
+                auction_end = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
+            except (ValueError, TypeError):
+                pass
+
+        # Address — from lotName (usually contains address)
+        address = title  # lotName typically contains the full address
+
+        # Region
+        region_code = card.get("subjectRFCode", "")
+
+        # Organizer — not directly available, but can be extracted from noticeAttributes
+        organizer = None
+        for attr in card.get("noticeAttributes", []):
+            if "org" in attr.get("code", "").lower():
+                organizer = attr.get("value", "")
+                break
+
+        # Category info
+        category = card.get("category", {})
+        category_name = category.get("name", "")
+
+        # Cadastral number
+        cadastral = (
+            self._get_characteristic(card, "cadastralNumberRealty") or
+            self._get_characteristic(card, "CadastralNumber")
+        )
 
         # Build result
         result = {
             "source": SourceType.TORGIGOV,
-            "source_id": str(card.get("id") or card.get("lotId") or card.get("lotNumber", "")),
-            "source_url": f"{TORGIGOV_BASE}/new/public/lots/lot/{card.get('id', '')}",
+            "source_id": lot_id,
+            "source_url": f"{TORGIGOV_LOT_URL}/{lot_id}",
             "title": title,
             "description": description,
-            "property_type": self._detect_property_type(title, description),
-            "address": card.get("lotAddress") or card.get("address", ""),
-            "region": card.get("regionName") or card.get("region", ""),
-            "city": card.get("cityName") or card.get("city", ""),
+            "property_type": self._detect_property_type(card),
+            "address": address,
+            "region": region_code,
+            "city": None,  # Not directly available, need geocoding
+            "latitude": None,
+            "longitude": None,
             "total_area": total_area,
+            "rooms": rooms,
+            "floor": floor,
+            "total_floors": total_floors,
             "start_price": start_price,
             "current_price": start_price,
-            "auction_status": self._detect_auction_status(card),
-            "auction_date_start": auction_start,
+            "auction_status": auction_status,
             "auction_date_end": auction_end,
             "publish_date": publish_date,
-            "lot_number": card.get("lotNumber", ""),
-            "organizer": card.get("organizerName") or card.get("organizer", ""),
-            "deposit": self._parse_price(str(card.get("deposit", ""))) if card.get("deposit") else None,
+            "lot_number": str(card.get("lotNumber", "")),
+            "organizer": organizer,
             "raw_data": card,
         }
 
-        # Calculate price per sqm
+        # Price per sqm
         if result["start_price"] and result["total_area"] and result["total_area"] > 0:
             result["price_per_sqm"] = result["start_price"] / result["total_area"]
 
@@ -156,100 +274,114 @@ class TorgiGovScraper(BaseScraper):
     def scrape_listings(
         self,
         region_code: str = None,
-        property_category: str = None,
+        category_codes: list[str] = None,
         days_back: int = 30,
-        max_pages: int = 50,
-        status_filter: str = None,
+        max_pages: int = 100,
+        page_size: int = 50,
     ) -> list[dict]:
         """
-        Scrape auction listings from torgi.gov.ru.
+        Scrape auction listings from torgi.gov.ru using real API.
 
         Args:
             region_code: Region OKATO code (e.g., "77" for Moscow)
-            property_category: Category filter
+            category_codes: List of category codes to filter.
+                Default: real estate categories.
             days_back: How many days back to look
             max_pages: Maximum number of pages to scrape
-            status_filter: Filter by auction status
+            page_size: Items per page (max 100)
         """
         all_listings = []
         page = 0
-        page_size = 20
 
-        logger.info(f"[torgi.gov.ru] Starting scrape: region={region_code}, days_back={days_back}")
+        # Default: all real estate categories
+        if category_codes is None:
+            category_codes = list(REAL_ESTATE_CATEGORIES.keys())
 
-        # Ensure we have a session
+        logger.info(
+            f"[torgi.gov.ru] Starting scrape: "
+            f"region={region_code}, categories={len(category_codes)}, days_back={days_back}"
+        )
+
+        # Ensure session
         if not self._api_session:
             self._api_session = self._create_api_session()
 
+        # Calculate date filter
         date_from = (datetime.now() - timedelta(days=days_back)).strftime("%d.%m.%Y")
 
         while page < max_pages:
             try:
                 self._throttle(1.0, 3.0)
 
-                # Build search params for torgi.gov.ru API
+                # Build real API params
                 params = {
-                    "dynSubjRF": region_code or "",
-                    "lotPropertyType": "2",  # 2 = real estate
-                    "biddType": "",
-                    "publishDateFrom": date_from,
-                    "lotStatus": status_filter or "",
-                    "catCode": property_category or "",
-                    "startPriceFrom": "",
-                    "startPriceTo": "",
+                    "lotStatus": "PUBLISHED,APPLICATIONS_SUBMISSION,DETERMINING_WINNER",
+                    "byFirstVersion": "true",
+                    "withFacets": "true",
+                    "size": str(min(page_size, 100)),
+                    "sort": "firstVersionPublicationDate,desc",
                     "page": str(page),
-                    "size": str(page_size),
-                    "sort": "publishDate,desc",
                 }
+
+                # Optional filters
+                if region_code:
+                    params["dynSubjRF"] = region_code
+
+                # Category filter — if single category, use catCode param
+                # If multiple, we'll filter in post-processing
+                if len(category_codes) == 1:
+                    params["catCode"] = category_codes[0]
 
                 logger.info(f"[torgi.gov.ru] Fetching page {page + 1}")
 
-                # Try API endpoint first
-                response = None
-                try:
-                    response = self._api_session.get(
-                        TORGIGOV_SEARCH_API,
-                        params=params,
-                        timeout=30,
+                response = self._api_session.get(
+                    TORGIGOV_SEARCH_API,
+                    params=params,
+                    timeout=30,
+                )
+
+                if response.status_code != 200:
+                    logger.warning(
+                        f"[torgi.gov.ru] API returned {response.status_code}: "
+                        f"{response.text[:200]}"
                     )
-                except Exception as e:
-                    logger.warning(f"[torgi.gov.ru] API request failed: {e}")
-
-                if response and response.status_code == 200:
-                    try:
-                        data = response.json()
-                        lots = data.get("content") or data.get("data") or data.get("lots") or []
-
-                        if not lots:
-                            # Try alternate response structure
-                            if isinstance(data, list):
-                                lots = data
-                            else:
-                                logger.info(f"[torgi.gov.ru] No lots found on page {page + 1}")
-                                break
-
-                        for lot in lots:
-                            parsed = self._parse_lot_card(lot)
-                            all_listings.append(parsed)
-
-                        logger.info(f"[torgi.gov.ru] Page {page + 1}: found {len(lots)} lots")
-
-                        if len(lots) < page_size:
-                            break
-
+                    self._rotate_session()
+                    self._api_session = self._create_api_session()
+                    if page > 0:
                         page += 1
                         continue
+                    break
 
-                    except (json.JSONDecodeError, KeyError) as e:
-                        logger.warning(f"[torgi.gov.ru] Failed to parse API response: {e}")
+                data = response.json()
+                lots = data.get("content", [])
 
-                # Fallback: scrape HTML page
-                if not response or response.status_code != 200:
-                    listings = self._scrape_html_page(page)
-                    if not listings:
-                        break
-                    all_listings.extend(listings)
-                    page += 1
+                if not lots:
+                    logger.info(f"[torgi.gov.ru] No lots on page {page + 1}")
+                    break
+
+                # Parse and filter
+                for lot in lots:
+                    # Filter by category if multiple
+                    lot_cat = lot.get("category", {}).get("code", "")
+                    if len(category_codes) > 1 and lot_cat not in category_codes:
+                        continue
+
+                    parsed = self._parse_lot_card(lot)
+                    all_listings.append(parsed)
+
+                # Pagination info
+                total_pages = data.get("totalPages", 0)
+                total_elements = data.get("totalElements", 0)
+
+                logger.info(
+                    f"[torgi.gov.ru] Page {page + 1}/{total_pages}: "
+                    f"{len(lots)} lots, total={total_elements}"
+                )
+
+                if page >= total_pages - 1:
+                    break
+
+                page += 1
 
             except Exception as e:
                 logger.error(f"[torgi.gov.ru] Error on page {page + 1}: {e}")
@@ -260,79 +392,59 @@ class TorgiGovScraper(BaseScraper):
                 else:
                     break
 
-        logger.info(f"[torgi.gov.ru] Scrape complete: {len(all_listings)} total listings")
+        logger.info(f"[torgi.gov.ru] Scrape complete: {len(all_listings)} total")
         return all_listings
 
-    def _scrape_html_page(self, page: int) -> list[dict]:
-        """Fallback: scrape HTML search results page."""
+    def scrape_listings_all_real_estate(
+        self,
+        region_code: str = None,
+        days_back: int = 30,
+    ) -> list[dict]:
+        """Scrape all real estate categories (apartments, houses, land, commercial)."""
+        return self.scrape_listings(
+            region_code=region_code,
+            category_codes=list(REAL_ESTATE_CATEGORIES.keys()),
+            days_back=days_back,
+        )
+
+    def scrape_listings_by_category(
+        self,
+        category_code: str,
+        region_code: str = None,
+        days_back: int = 30,
+    ) -> list[dict]:
+        """Scrape listings for a specific category code."""
+        return self.scrape_listings(
+            region_code=region_code,
+            category_codes=[category_code],
+            days_back=days_back,
+        )
+
+    def get_categories(self) -> dict:
+        """Get available categories with counts from the API."""
+        if not self._api_session:
+            self._api_session = self._create_api_session()
+
         try:
-            url = f"{TORGIGOV_API_URL}?page={page}"
-            response = self.fetch_with_retry(url)
-
-            soup = BeautifulSoup(response.text, "lxml")
-            listings = []
-
-            # Parse lot cards from HTML
-            lot_cards = soup.select(".lot-card, .lotItem, [class*='lot-card'], tr.lot-row")
-
-            for card in lot_cards:
-                try:
-                    title_el = card.select_one("a.lot-title, .lotName a, h3 a, td:nth-child(2)")
-                    title = title_el.get_text(strip=True) if title_el else ""
-                    link = title_el.get("href", "") if title_el else ""
-
-                    price_el = card.select_one(".lot-price, .price, td:nth-child(3)")
-                    price_text = price_el.get_text(strip=True) if price_el else ""
-
-                    address_el = card.select_one(".lot-address, .address, td:nth-child(4)")
-                    address = address_el.get_text(strip=True) if address_el else ""
-
-                    date_el = card.select_one(".lot-date, .date, td:nth-child(5)")
-                    date_text = date_el.get_text(strip=True) if date_el else ""
-
-                    # Extract lot ID from link
-                    lot_id = ""
-                    if link:
-                        match = re.search(r"/lot/(\d+)", link)
-                        if match:
-                            lot_id = match.group(1)
-
-                    if title or lot_id:
-                        result = {
-                            "source": SourceType.TORGIGOV,
-                            "source_id": lot_id or hashlib.md5(title.encode()).hexdigest()[:16],
-                            "source_url": f"{TORGIGOV_BASE}{link}" if link else "",
-                            "title": title,
-                            "address": address,
-                            "start_price": self._parse_price(price_text),
-                            "current_price": self._parse_price(price_text),
-                            "publish_date": self._parse_date(date_text),
-                            "property_type": self._detect_property_type(title),
-                            "auction_status": AuctionStatus.ACTIVE,
-                        }
-                        listings.append(result)
-
-                except Exception as e:
-                    logger.warning(f"[torgi.gov.ru] Failed to parse lot card: {e}")
-                    continue
-
-            logger.info(f"[torgi.gov.ru] HTML page {page}: {len(listings)} listings")
-            return listings
-
+            response = self._api_session.get(
+                TORGIGOV_SEARCH_API,
+                params={
+                    "lotStatus": "PUBLISHED,APPLICATIONS_SUBMISSION,DETERMINING_WINNER",
+                    "byFirstVersion": "true",
+                    "withFacets": "true",
+                    "size": "1",
+                    "sort": "firstVersionPublicationDate,desc",
+                },
+                timeout=30,
+            )
+            if response.status_code == 200:
+                data = response.json()
+                facets = data.get("categoryFacet", [])
+                return {f["_id"]: f["count"] for f in facets}
         except Exception as e:
-            logger.error(f"[torgi.gov.ru] HTML scrape failed: {e}")
-            return []
+            logger.error(f"[torgi.gov.ru] Failed to get categories: {e}")
 
-    def get_lot_details(self, lot_id: str) -> Optional[dict]:
-        """Fetch detailed information for a specific lot."""
-        try:
-            url = TORGIGOV_LOT_API.format(lotId=lot_id)
-            response = self.fetch_with_retry(url)
-            data = response.json()
-            return self._parse_lot_card(data)
-        except Exception as e:
-            logger.error(f"[torgi.gov.ru] Failed to get lot {lot_id}: {e}")
-            return None
+        return {}
 
     def scrape_moscow(self, days_back: int = 30) -> list[dict]:
         """Convenience: scrape Moscow region (code 77)."""
