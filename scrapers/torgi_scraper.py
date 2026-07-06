@@ -1,13 +1,17 @@
 """Scraper for torgi.gov.ru — Russian government auction portal.
 
-Uses the REAL public API discovered via web research:
+Uses the REAL public API:
 GET /new/api/public/lotcards/search
 
-Response structure:
-- content[]: lot cards with nested characteristics
-- pageable: pagination info
-- categoryFacet: category counts
-- totalElements: total count
+Verified parameters from reverse-engineering and public Scrapy spiders:
+- lotStatus=PUBLISHED,APPLICATIONS_SUBMISSION,DETERMINING_WINNER
+- byFirstVersion=true
+- withFacets=true
+- size={page_size} (max 100)
+- sort=firstVersionPublicationDate,desc
+- page={page_number}
+- dynSubjRF={region_code} (OKATO region code, e.g. "77" = Moscow)
+- text={search_text} (optional free text)
 """
 
 import re
@@ -27,20 +31,19 @@ from models import SourceType, AuctionStatus, PropertyType
 
 TORGIGOV_BASE = "https://torgi.gov.ru"
 TORGIGOV_SEARCH_API = f"{TORGIGOV_BASE}/new/api/public/lotcards/search"
-TORGIGOV_EXPORT_API = f"{TORGIGOV_BASE}/new/api/public/lotcards/export/excel"
 TORGIGOV_LOT_URL = f"{TORGIGOV_BASE}/new/public/lots/lot"
 
 # Real estate category codes on torgi.gov.ru (from actual API facets)
 REAL_ESTATE_CATEGORIES = {
-    "9":    "Жилые помещения",          # Apartments, houses
-    "8":    "Здания",                    # Buildings
-    "11":   "Нежилые помещения",         # Non-residential premises
-    "301":  "Земли населенных пунктов",  # Land in settlements
-    "307":  "Земли с/х назначения",      # Agricultural land
-    "304":  "Земли промышленности",      # Industrial land
-    "406":  "Имущественный комплекс",    # Property complex
-    "10":   "Сооружения",               # Structures
-    "4":    "Объекты незавершённого строительства",  # Unfinished construction
+    "9":    "Жилые помещения",
+    "8":    "Здания",
+    "11":   "Нежилые помещения",
+    "301":  "Земли населенных пунктов",
+    "307":  "Земли с/х назначения",
+    "304":  "Земли промышленности",
+    "406":  "Имущественный комплекс",
+    "10":   "Сооружения",
+    "4":    "Объекты незавершённого строительства",
 }
 
 # Status mapping from real API values
@@ -51,6 +54,94 @@ STATUS_MAP = {
     "COMPLETED": AuctionStatus.COMPLETED,
     "CANCELLED": AuctionStatus.CANCELLED,
     "ANULLED": AuctionStatus.CANCELLED,
+}
+
+# Real OKATO region codes (two-digit)
+REGION_CODES = {
+    "77": "Москва",
+    "78": "Санкт-Петербург",
+    "50": "Московская область",
+    "47": "Ленинградская область",
+    "54": "Новосибирская область",
+    "66": "Свердловская область",
+    "16": "Республика Татарстан",
+    "52": "Нижегородская область",
+    "23": "Краснодарский край",
+    "30": "Астраханская область",
+    "01": "Республика Адыгея",
+    "02": "Республика Башкортостан",
+    "03": "Республика Бурятия",
+    "04": "Республика Алтай",
+    "05": "Республика Дагестан",
+    "06": "Республика Ингушетия",
+    "07": "Кабардино-Балкарская Республика",
+    "08": "Республика Калмыкия",
+    "09": "Карачаево-Черкесская Республика",
+    "10": "Республика Карелия",
+    "11": "Республика Коми",
+    "12": "Республика Марий Эл",
+    "13": "Республика Мордовия",
+    "14": "Республика Саха (Якутия)",
+    "15": "Республика Северная Осетия — Алания",
+    "17": "Республика Тыва",
+    "18": "Удмуртская Республика",
+    "19": "Республика Хакасия",
+    "20": "Чеченская Республика",
+    "21": "Чувашская Республика",
+    "22": "Алтайский край",
+    "24": "Красноярский край",
+    "25": "Приморский край",
+    "26": "Ставропольский край",
+    "27": "Хабаровский край",
+    "28": "Амурская область",
+    "29": "Архангельская область",
+    "31": "Белгородская область",
+    "32": "Брянская область",
+    "33": "Владимирская область",
+    "34": "Волгоградская область",
+    "35": "Вологодская область",
+    "36": "Воронежская область",
+    "37": "Ивановская область",
+    "38": "Иркутская область",
+    "39": "Калининградская область",
+    "40": "Калужская область",
+    "41": "Камчатский край",
+    "42": "Кемеровская область",
+    "43": "Кировская область",
+    "44": "Костромская область",
+    "45": "Курганская область",
+    "46": "Курская область",
+    "48": "Липецкая область",
+    "49": "Магаданская область",
+    "51": "Мурманская область",
+    "53": "Омская область",
+    "55": "Оренбургская область",
+    "56": "Орловская область",
+    "57": "Пензенская область",
+    "58": "Пермский край",
+    "59": "Псковская область",
+    "60": "Ростовская область",
+    "61": "Рязанская область",
+    "62": "Самарская область",
+    "63": "Саратовская область",
+    "64": "Сахалинская область",
+    "65": "Смоленская область",
+    "67": "Тамбовская область",
+    "68": "Тверская область",
+    "69": "Томская область",
+    "70": "Тульская область",
+    "71": "Тюменская область",
+    "72": "Ульяновская область",
+    "73": "Челябинская область",
+    "74": "Забайкальский край",
+    "75": "Ярославская область",
+    "76": "Еврейская автономная область",
+    "79": "Чукотский автономный округ",
+    "83": "Ненецкий автономный округ",
+    "86": "Ханты-Мансийский автономный округ — Югра",
+    "87": "Ямало-Ненецкий автономный округ",
+    "89": "Республика Крым",
+    "92": "Севастополь",
 }
 
 
@@ -83,7 +174,6 @@ class TorgiGovScraper(BaseScraper):
             if char.get("code") == code:
                 val = char.get("characteristicValue")
                 if val is not None:
-                    # Handle multiselect (list of dicts)
                     if isinstance(val, list) and val and isinstance(val[0], dict):
                         return val[0].get("name", "")
                     return str(val)
@@ -103,10 +193,8 @@ class TorgiGovScraper(BaseScraper):
         """Detect property type from category and characteristics."""
         category = card.get("category", {})
         cat_code = category.get("code", "")
-        cat_name = category.get("name", "").lower()
 
-        # Check category
-        if cat_code == "9":  # Жилые помещения
+        if cat_code == "9":
             living_type = self._get_characteristic(card, "typeLivingQuarters")
             if living_type:
                 living_type = living_type.lower()
@@ -116,19 +204,19 @@ class TorgiGovScraper(BaseScraper):
                     return PropertyType.ROOM
             return PropertyType.APARTMENT
 
-        if cat_code in ("301", "307", "304"):  # Земли
+        if cat_code in ("301", "307", "304"):
             return PropertyType.LAND
 
-        if cat_code in ("8", "10"):  # Здания, сооружения
+        if cat_code in ("8", "10"):
             purpose = self._get_characteristic(card, "purposeBuilding")
             if purpose and "жилое" in purpose.lower():
                 return PropertyType.HOUSE
             return PropertyType.COMMERCIAL
 
-        if cat_code == "11":  # Нежилые помещения
+        if cat_code == "11":
             return PropertyType.COMMERCIAL
 
-        if cat_code == "4":  # Объекты незавершённого строительства
+        if cat_code == "4":
             return PropertyType.OTHER
 
         # Fallback: check title
@@ -148,35 +236,32 @@ class TorgiGovScraper(BaseScraper):
 
     def _parse_lot_card(self, card: dict) -> dict:
         """Parse a lot card from the real API response."""
-        # Basic info
         lot_id = card.get("id", "")
         title = card.get("lotName", "")
         description = card.get("lotDescription", "")
 
-        # Price
-        start_price = card.get("priceMin")
+        start_price = card.get("priceMin") or card.get("startPrice")
 
-        # Area — extract from characteristics
         total_area = (
             self._get_characteristic_float(card, "totalAreaRealty") or
-            self._get_characteristic_float(card, "SquareZU")  # Land area
+            self._get_characteristic_float(card, "SquareZU")
         )
 
-        # Rooms — extract from title (e.g., "3-комнатная квартира", "Однокомнатная")
+        # Parse rooms from title
         rooms = None
         room_match = re.search(r"(\d+)\s*[-–]?\s*комн", title, re.IGNORECASE)
         if room_match:
             rooms = int(room_match.group(1))
         elif re.search(r"однокомнатн", title, re.IGNORECASE):
             rooms = 1
-        elif re.search(r"двухкомнатн|двухкомнатн", title, re.IGNORECASE):
+        elif re.search(r"двухкомнатн", title, re.IGNORECASE):
             rooms = 2
-        elif re.search(r"трехкомнатн|трёхкомнатн", title, re.IGNORECASE):
+        elif re.search(r"тр[ёе]хкомнатн", title, re.IGNORECASE):
             rooms = 3
-        elif re.search(r"четырехкомнатн|четырёхкомнатн", title, re.IGNORECASE):
+        elif re.search(r"четыр[ёе]хкомнатн", title, re.IGNORECASE):
             rooms = 4
 
-        # Floor — extract from characteristic
+        # Floor from characteristics
         floor = None
         location = self._get_characteristic(card, "locationObjectRealty")
         if location:
@@ -184,7 +269,6 @@ class TorgiGovScraper(BaseScraper):
             if floor_match:
                 floor = int(floor_match.group(1))
 
-        # Total floors
         total_floors = None
         floors_str = self._get_characteristic(card, "numberFloors")
         if floors_str:
@@ -202,7 +286,6 @@ class TorgiGovScraper(BaseScraper):
         pub_str = card.get("noticeFirstVersionPublicationDate")
         if pub_str:
             try:
-                # Format: "2024-05-05T07:02:03.81Z"
                 publish_date = datetime.fromisoformat(pub_str.replace("Z", "+00:00")).date()
             except (ValueError, TypeError):
                 pass
@@ -215,30 +298,15 @@ class TorgiGovScraper(BaseScraper):
             except (ValueError, TypeError):
                 pass
 
-        # Address — from lotName (usually contains address)
         address = title  # lotName typically contains the full address
-
-        # Region
         region_code = card.get("subjectRFCode", "")
 
-        # Organizer — not directly available, but can be extracted from noticeAttributes
         organizer = None
         for attr in card.get("noticeAttributes", []):
             if "org" in attr.get("code", "").lower():
                 organizer = attr.get("value", "")
                 break
 
-        # Category info
-        category = card.get("category", {})
-        category_name = category.get("name", "")
-
-        # Cadastral number
-        cadastral = (
-            self._get_characteristic(card, "cadastralNumberRealty") or
-            self._get_characteristic(card, "CadastralNumber")
-        )
-
-        # Build result
         result = {
             "source": SourceType.TORGIGOV,
             "source_id": lot_id,
@@ -248,7 +316,7 @@ class TorgiGovScraper(BaseScraper):
             "property_type": self._detect_property_type(card),
             "address": address,
             "region": region_code,
-            "city": None,  # Not directly available, need geocoding
+            "city": None,  # Needs geocoding
             "latitude": None,
             "longitude": None,
             "total_area": total_area,
@@ -265,7 +333,6 @@ class TorgiGovScraper(BaseScraper):
             "raw_data": card,
         }
 
-        # Price per sqm
         if result["start_price"] and result["total_area"] and result["total_area"] > 0:
             result["price_per_sqm"] = result["start_price"] / result["total_area"]
 
@@ -275,6 +342,7 @@ class TorgiGovScraper(BaseScraper):
         self,
         region_code: str = None,
         category_codes: list[str] = None,
+        search_text: str = None,
         days_back: int = 30,
         max_pages: int = 100,
         page_size: int = 50,
@@ -283,37 +351,33 @@ class TorgiGovScraper(BaseScraper):
         Scrape auction listings from torgi.gov.ru using real API.
 
         Args:
-            region_code: Region OKATO code (e.g., "77" for Moscow)
+            region_code: OKATO region code (e.g., "77" for Moscow).
             category_codes: List of category codes to filter.
-                Default: real estate categories.
-            days_back: How many days back to look
-            max_pages: Maximum number of pages to scrape
-            page_size: Items per page (max 100)
+            search_text: Free text search (e.g., "Жилой дом").
+            days_back: How many days back to look.
+            max_pages: Maximum number of pages to scrape.
+            page_size: Items per page (max 100).
         """
         all_listings = []
         page = 0
 
-        # Default: all real estate categories
         if category_codes is None:
             category_codes = list(REAL_ESTATE_CATEGORIES.keys())
 
         logger.info(
             f"[torgi.gov.ru] Starting scrape: "
-            f"region={region_code}, categories={len(category_codes)}, days_back={days_back}"
+            f"region={region_code}, categories={len(category_codes)}, "
+            f"search={search_text}, days_back={days_back}"
         )
 
-        # Ensure session
         if not self._api_session:
             self._api_session = self._create_api_session()
-
-        # Calculate date filter
-        date_from = (datetime.now() - timedelta(days=days_back)).strftime("%d.%m.%Y")
 
         while page < max_pages:
             try:
                 self._throttle(1.0, 3.0)
 
-                # Build real API params
+                # Build real API params (verified from reverse engineering)
                 params = {
                     "lotStatus": "PUBLISHED,APPLICATIONS_SUBMISSION,DETERMINING_WINNER",
                     "byFirstVersion": "true",
@@ -323,12 +387,13 @@ class TorgiGovScraper(BaseScraper):
                     "page": str(page),
                 }
 
-                # Optional filters
                 if region_code:
                     params["dynSubjRF"] = region_code
 
-                # Category filter — if single category, use catCode param
-                # If multiple, we'll filter in post-processing
+                if search_text:
+                    params["text"] = search_text
+
+                # Single category filter
                 if len(category_codes) == 1:
                     params["catCode"] = category_codes[0]
 
@@ -359,9 +424,8 @@ class TorgiGovScraper(BaseScraper):
                     logger.info(f"[torgi.gov.ru] No lots on page {page + 1}")
                     break
 
-                # Parse and filter
+                # Parse and filter by category
                 for lot in lots:
-                    # Filter by category if multiple
                     lot_cat = lot.get("category", {}).get("code", "")
                     if len(category_codes) > 1 and lot_cat not in category_codes:
                         continue
@@ -369,7 +433,6 @@ class TorgiGovScraper(BaseScraper):
                     parsed = self._parse_lot_card(lot)
                     all_listings.append(parsed)
 
-                # Pagination info
                 total_pages = data.get("totalPages", 0)
                 total_elements = data.get("totalElements", 0)
 
@@ -400,7 +463,7 @@ class TorgiGovScraper(BaseScraper):
         region_code: str = None,
         days_back: int = 30,
     ) -> list[dict]:
-        """Scrape all real estate categories (apartments, houses, land, commercial)."""
+        """Scrape all real estate categories."""
         return self.scrape_listings(
             region_code=region_code,
             category_codes=list(REAL_ESTATE_CATEGORIES.keys()),

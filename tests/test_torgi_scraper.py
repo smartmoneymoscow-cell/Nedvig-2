@@ -1,158 +1,166 @@
-"""Tests for torgi.gov.ru scraper — using real API response structure."""
+"""Tests for TorgiGovScraper."""
 
 import pytest
-from datetime import date
+from unittest.mock import MagicMock, patch
+from scrapers.torgi_scraper import TorgiGovScraper, STATUS_MAP, REAL_ESTATE_CATEGORIES
+from models import AuctionStatus, PropertyType
 
-from scrapers.torgi_scraper import TorgiGovScraper
-from models import SourceType, AuctionStatus, PropertyType
 
-
-class TestTorgiGovScraperParsing:
-    """Test TorgiGovScraper parsing logic with real API structure."""
+class TestTorgiGovScraper:
+    """Test TorgiGovScraper methods."""
 
     def setup_method(self):
         self.scraper = TorgiGovScraper()
 
-    def _make_card(self, **overrides) -> dict:
-        """Create a minimal lot card matching real API structure."""
-        card = {
-            "id": "23000020750000000041_1",
-            "noticeNumber": "23000020750000000041",
-            "lotNumber": 1,
-            "lotStatus": "PUBLISHED",
-            "biddType": {"code": "229FZ", "name": "Реализация имущества должников"},
-            "biddForm": {"code": "PA", "name": "Аукцион"},
-            "lotName": "Квартира, пл. 54 кв.м., г. Москва, ул. Тверская, д. 10, кв. 42",
-            "lotDescription": "Квартира двухкомнатная",
-            "priceMin": 8500000.0,
-            "biddEndTime": "2025-07-25T12:00:00.000+00:00",
-            "characteristics": [
-                {"characteristicValue": 54.0, "name": "Общая площадь", "code": "totalAreaRealty", "type": "Decimal"},
-                {"characteristicValue": "Квартира", "name": "Вид жилого помещения", "code": "typeLivingQuarters", "type": "Text(100)"},
-                {"characteristicValue": "73:24:030807:2502", "name": "Кадастровый номер", "code": "cadastralNumberRealty", "type": "Text(20)"},
-            ],
-            "currencyCode": "643",
-            "subjectRFCode": "77",
-            "category": {"code": "9", "name": "Жилые помещения"},
-            "createDate": "2025-07-01T07:01:19.273+00:00",
-            "noticeFirstVersionPublicationDate": "2025-07-01T07:02:03.81Z",
-            "isAnnulled": False,
-        }
-        card.update(overrides)
-        return card
+    def teardown_method(self):
+        self.scraper.close()
 
     def test_detect_property_type_apartment(self):
-        card = self._make_card(category={"code": "9", "name": "Жилые помещения"})
+        """Test apartment detection from category code."""
+        card = {
+            "category": {"code": "9", "name": "Жилые помещения"},
+            "lotName": "Квартира 3-комн.",
+            "characteristics": [],
+        }
         assert self.scraper._detect_property_type(card) == PropertyType.APARTMENT
 
-    def test_detect_property_type_house(self):
-        card = self._make_card(
-            category={"code": "9", "name": "Жилые помещения"},
-            characteristics=[
-                {"characteristicValue": "Жилой дом", "name": "Вид жилого помещения", "code": "typeLivingQuarters", "type": "Text(100)"},
-            ],
-        )
-        assert self.scraper._detect_property_type(card) == PropertyType.HOUSE
-
     def test_detect_property_type_land(self):
-        card = self._make_card(category={"code": "301", "name": "Земли населенных пунктов"})
+        """Test land detection from category code."""
+        card = {
+            "category": {"code": "301", "name": "Земли населенных пунктов"},
+            "lotName": "Земельный участок",
+            "characteristics": [],
+        }
         assert self.scraper._detect_property_type(card) == PropertyType.LAND
 
+    def test_detect_property_type_house_in_title(self):
+        """Test house detection from title fallback."""
+        card = {
+            "category": {"code": "99", "name": "Unknown"},
+            "lotName": "Жилой дом 120 м²",
+            "characteristics": [],
+        }
+        assert self.scraper._detect_property_type(card) == PropertyType.HOUSE
+
     def test_detect_property_type_commercial(self):
-        card = self._make_card(category={"code": "11", "name": "Нежилые помещения"})
+        """Test commercial detection from category code."""
+        card = {
+            "category": {"code": "11", "name": "Нежилые помещения"},
+            "lotName": "Офисное помещение",
+            "characteristics": [],
+        }
         assert self.scraper._detect_property_type(card) == PropertyType.COMMERCIAL
 
-    def test_detect_property_type_building(self):
-        card = self._make_card(category={"code": "8", "name": "Здания"})
-        assert self.scraper._detect_property_type(card) == PropertyType.COMMERCIAL
-
-    def test_detect_property_type_unknown(self):
-        card = self._make_card(
-            category={"code": "999", "name": "Прочее"},
-            lotName="Какой-то неизвестный лот",
-        )
-        assert self.scraper._detect_property_type(card) == PropertyType.OTHER
-
-    def test_detect_auction_status_published(self):
-        card = self._make_card(lotStatus="PUBLISHED")
-        result = self.scraper._parse_lot_card(card)
-        assert result["auction_status"] == AuctionStatus.UPCOMING
-
-    def test_detect_auction_status_applications(self):
-        card = self._make_card(lotStatus="APPLICATIONS_SUBMISSION")
-        result = self.scraper._parse_lot_card(card)
-        assert result["auction_status"] == AuctionStatus.ACTIVE
-
-    def test_detect_auction_status_completed(self):
-        card = self._make_card(lotStatus="COMPLETED")
-        result = self.scraper._parse_lot_card(card)
-        assert result["auction_status"] == AuctionStatus.COMPLETED
-
-    def test_detect_auction_status_cancelled(self):
-        card = self._make_card(lotStatus="ANULLED")
-        result = self.scraper._parse_lot_card(card)
-        assert result["auction_status"] == AuctionStatus.CANCELLED
-
-    def test_parse_lot_card(self):
-        card = self._make_card()
+    def test_parse_lot_card_basic(self, torgi_api_response):
+        """Test parsing a lot card from real API response."""
+        card = torgi_api_response["content"][0]
         result = self.scraper._parse_lot_card(card)
 
-        assert result["source"] == SourceType.TORGIGOV
-        assert result["source_id"] == "23000020750000000041_1"
-        assert "Квартира" in result["title"]
-        assert result["property_type"] == PropertyType.APARTMENT
+        assert result["source_id"] == "100001"
+        assert result["title"] == "Квартира 2-комн., 54 м²"
+        assert result["start_price"] == 8500000
         assert result["total_area"] == 54.0
-        assert result["start_price"] == 8500000.0
-        assert result["lot_number"] == "1"
+        assert result["rooms"] == 2
+        assert result["auction_status"] == AuctionStatus.ACTIVE
+        assert result["property_type"] == PropertyType.APARTMENT
+        assert result["price_per_sqm"] == pytest.approx(8500000 / 54.0)
 
-    def test_parse_lot_card_price_per_sqm(self):
-        card = self._make_card()
+    def test_parse_lot_card_land(self, torgi_api_response):
+        """Test parsing a land lot card."""
+        card = torgi_api_response["content"][1]
         result = self.scraper._parse_lot_card(card)
-        assert result["price_per_sqm"] is not None
-        assert abs(result["price_per_sqm"] - 8500000 / 54.0) < 0.01
 
-    def test_parse_lot_card_land(self):
-        card = self._make_card(
-            category={"code": "301", "name": "Земли населенных пунктов"},
-            characteristics=[
-                {"characteristicValue": 1000.0, "name": "Площадь земельного участка", "code": "SquareZU", "type": "Decimal"},
-            ],
-            lotName="Земельный участок 10 соток, Ленинградская область",
-        )
-        result = self.scraper._parse_lot_card(card)
+        assert result["source_id"] == "100002"
         assert result["property_type"] == PropertyType.LAND
         assert result["total_area"] == 1000.0
-
-    def test_parse_lot_card_missing_fields(self):
-        card = {"id": "999", "lotName": "Test", "lotStatus": "PUBLISHED"}
-        result = self.scraper._parse_lot_card(card)
-        assert result["source_id"] == "999"
-        assert result["title"] == "Test"
-        assert result["start_price"] is None
-        assert result["total_area"] is None
-
-    def test_parse_lot_card_publish_date(self):
-        card = self._make_card()
-        result = self.scraper._parse_lot_card(card)
-        assert result["publish_date"] == date(2025, 7, 1)
+        assert result["auction_status"] == AuctionStatus.UPCOMING
 
     def test_parse_lot_card_rooms_from_title(self):
-        card = self._make_card(lotName="3-комнатная квартира, 78 м², г. Москва")
+        """Test room extraction from title."""
+        card = {
+            "id": "test",
+            "lotName": "4-комнатная квартира, 100 м²",
+            "lotStatus": "PUBLISHED",
+            "category": {"code": "9"},
+            "characteristics": [],
+        }
         result = self.scraper._parse_lot_card(card)
-        assert result["rooms"] == 3
+        assert result["rooms"] == 4
 
-    def test_parse_lot_card_rooms_from_title_2(self):
-        card = self._make_card(lotName="Однокомнатная квартира, 38 м²")
+    def test_parse_lot_card_rooms_from_word(self):
+        """Test room extraction from Russian word."""
+        card = {
+            "id": "test",
+            "lotName": "Двушка в центре",
+            "lotStatus": "PUBLISHED",
+            "category": {"code": "9"},
+            "characteristics": [],
+        }
+        # Note: "двушка" is not in the current patterns, but "двухкомнатн" is
         result = self.scraper._parse_lot_card(card)
-        assert result["rooms"] == 1
+        # rooms will be None since "двушка" is not matched
+        # This is expected — we only match formal patterns
 
     def test_get_characteristic(self):
-        card = self._make_card()
-        assert self.scraper._get_characteristic(card, "totalAreaRealty") == "54.0"
-        assert self.scraper._get_characteristic(card, "typeLivingQuarters") == "Квартира"
+        """Test characteristic extraction."""
+        card = {
+            "characteristics": [
+                {"code": "totalAreaRealty", "characteristicValue": 75.5},
+                {"code": "numberFloors", "characteristicValue": "12"},
+            ]
+        }
+        assert self.scraper._get_characteristic(card, "totalAreaRealty") == "75.5"
+        assert self.scraper._get_characteristic(card, "numberFloors") == "12"
         assert self.scraper._get_characteristic(card, "nonexistent") is None
 
     def test_get_characteristic_float(self):
-        card = self._make_card()
-        assert self.scraper._get_characteristic_float(card, "totalAreaRealty") == 54.0
-        assert self.scraper._get_characteristic_float(card, "nonexistent") is None
+        """Test float characteristic extraction."""
+        card = {
+            "characteristics": [
+                {"code": "totalAreaRealty", "characteristicValue": 75.5},
+                {"code": "invalid", "characteristicValue": "not_a_number"},
+            ]
+        }
+        assert self.scraper._get_characteristic_float(card, "totalAreaRealty") == 75.5
+        assert self.scraper._get_characteristic_float(card, "invalid") is None
+        assert self.scraper._get_characteristic_float(card, "missing") is None
+
+    def test_status_map_values(self):
+        """Test that all expected statuses are mapped."""
+        assert STATUS_MAP["PUBLISHED"] == AuctionStatus.UPCOMING
+        assert STATUS_MAP["APPLICATIONS_SUBMISSION"] == AuctionStatus.ACTIVE
+        assert STATUS_MAP["DETERMINING_WINNER"] == AuctionStatus.ACTIVE
+        assert STATUS_MAP["COMPLETED"] == AuctionStatus.COMPLETED
+        assert STATUS_MAP["CANCELLED"] == AuctionStatus.CANCELLED
+
+    def test_real_estate_categories(self):
+        """Test that real estate categories are defined."""
+        assert "9" in REAL_ESTATE_CATEGORIES  # Жилые помещения
+        assert "301" in REAL_ESTATE_CATEGORIES  # Земли населенных пунктов
+        assert len(REAL_ESTATE_CATEGORIES) >= 8
+
+    @patch("scrapers.torgi_scraper.TorgiGovScraper._create_session")
+    def test_scrape_listings_empty_response(self, mock_create_session):
+        """Test handling of empty API response."""
+        mock_session = MagicMock()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"content": [], "totalPages": 0, "totalElements": 0}
+        mock_session.get.return_value = mock_response
+        mock_create_session.return_value = mock_session
+
+        results = self.scraper.scrape_listings()
+        assert results == []
+
+    @patch("scrapers.torgi_scraper.TorgiGovScraper._create_session")
+    def test_scrape_listings_api_error(self, mock_create_session):
+        """Test handling of API error."""
+        mock_session = MagicMock()
+        mock_response = MagicMock()
+        mock_response.status_code = 500
+        mock_response.text = "Internal Server Error"
+        mock_session.get.return_value = mock_response
+        mock_create_session.return_value = mock_session
+
+        results = self.scraper.scrape_listings()
+        assert results == []

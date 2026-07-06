@@ -24,6 +24,8 @@ class Base(DeclarativeBase):
 class SourceType(enum.Enum):
     TORGIGOV = "torgi_gov"
     GOSPLAN = "gosplan"
+    FEDRESURS = "fedresurs"
+    ETP = "etp"
 
 
 class AuctionStatus(enum.Enum):

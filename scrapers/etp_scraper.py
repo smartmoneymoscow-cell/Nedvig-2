@@ -166,7 +166,7 @@ class EtpScraper(BaseScraper):
                     pass
 
         return {
-            "source": SourceType.GOSPLAN,  # Reuse the enum
+            "source": SourceType.ETP,
             "source_id": hashlib.md5(f"{self.platform}:{title}:{link}".encode()).hexdigest()[:16],
             "source_url": link if link.startswith("http") else f"{self.base_url}{link}",
             "title": title,

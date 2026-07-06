@@ -12,6 +12,13 @@ from models import AuctionProperty, ScrapeLog, SourceType, AuctionStatus, Proper
 
 router = APIRouter(prefix="/api")
 
+# Allowed sort fields (whitelist to prevent arbitrary column access)
+ALLOWED_SORT_FIELDS = {
+    "publish_date", "start_price", "current_price", "market_price",
+    "total_area", "discount_pct", "created_at", "updated_at",
+    "rooms", "floor", "city", "property_type", "auction_status",
+}
+
 
 @router.get("/properties")
 async def get_properties(
@@ -34,18 +41,23 @@ async def get_properties(
     page_size: int = Query(50, ge=1, le=500),
 ):
     """Get filtered list of auction properties."""
+    # Validate sort_by against whitelist
+    if sort_by not in ALLOWED_SORT_FIELDS:
+        sort_by = "publish_date"
+
     query = select(AuctionProperty)
 
     # Apply filters
     filters = []
 
     if city:
+        # Use ilike with proper escaping
         filters.append(AuctionProperty.city.ilike(f"%{city}%"))
-    if property_type:
+    if property_type and property_type in [e.value for e in PropertyType]:
         filters.append(AuctionProperty.property_type == property_type)
-    if status:
+    if status and status in [e.value for e in AuctionStatus]:
         filters.append(AuctionProperty.auction_status == status)
-    if source:
+    if source and source in [e.value for e in SourceType]:
         filters.append(AuctionProperty.source == source)
     if price_min is not None:
         filters.append(AuctionProperty.start_price >= price_min)
@@ -79,8 +91,10 @@ async def get_properties(
     count_query = select(func.count()).select_from(query.subquery())
     total = (await session.execute(count_query)).scalar()
 
-    # Sort
+    # Sort (sort_by already validated against whitelist)
     sort_column = getattr(AuctionProperty, sort_by, AuctionProperty.publish_date)
+    if sort_order not in ("asc", "desc"):
+        sort_order = "desc"
     if sort_order == "desc":
         query = query.order_by(sort_column.desc())
     else:
@@ -188,7 +202,7 @@ async def get_stats(session: AsyncSession = Depends(get_session)):
                 )
             )
         ).scalar()
-        by_source[source.value] = count
+        by_source[source.value] = count or 0
 
     by_status = {}
     for status in AuctionStatus:

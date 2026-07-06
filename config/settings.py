@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     APP_PORT: int = 8000
     DEBUG: bool = True
 
+    # Security
+    ADMIN_API_KEY: str = ""
+    CORS_ORIGINS: str = "*"
+
     # Dev mode (SQLite fallback)
     USE_SQLITE: bool = False
     SQLITE_PATH: str = "estate_auction.db"

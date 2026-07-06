@@ -73,7 +73,7 @@ def sample_property_data():
 
 @pytest.fixture
 def torgi_api_response():
-    """Mock torgi.gov.ru API response."""
+    """Mock torgi.gov.ru API response (based on real API structure)."""
     return {
         "content": [
             {
@@ -84,13 +84,21 @@ def torgi_api_response():
                 "regionName": "Москва",
                 "cityName": "Москва",
                 "startPrice": 8500000,
+                "priceMin": 8500000,
                 "totalArea": 54.0,
                 "publishDate": "01.07.2025",
                 "biddingStartDate": "15.07.2025 10:00",
                 "biddingEndDate": "25.07.2025 18:00",
-                "lotStatus": "Идут торги",
+                "lotStatus": "APPLICATIONS_SUBMISSION",
                 "lotNumber": "T-2025-001",
                 "organizerName": "Управление Росимущества",
+                "category": {"code": "9", "name": "Жилые помещения"},
+                "characteristics": [
+                    {"code": "totalAreaRealty", "characteristicValue": 54.0},
+                    {"code": "numberFloors", "characteristicValue": "9"},
+                ],
+                "noticeFirstVersionPublicationDate": "2025-07-01T10:00:00.00Z",
+                "biddEndTime": "2025-07-25T18:00:00.00Z",
             },
             {
                 "id": "100002",
@@ -100,12 +108,54 @@ def torgi_api_response():
                 "regionName": "Московская область",
                 "cityName": "Одинцово",
                 "startPrice": 3200000,
-                "totalArea": 1000.0,
                 "publishDate": "28.06.2025",
-                "lotStatus": "Опубликован",
+                "lotStatus": "PUBLISHED",
                 "lotNumber": "T-2025-002",
+                "category": {"code": "301", "name": "Земли населенных пунктов"},
+                "characteristics": [
+                    {"code": "SquareZU", "characteristicValue": 1000.0},
+                ],
+                "noticeFirstVersionPublicationDate": "2025-06-28T08:00:00.00Z",
             },
         ],
         "totalElements": 2,
         "totalPages": 1,
+        "categoryFacet": [
+            {"_id": "9", "count": 150},
+            {"_id": "301", "count": 80},
+        ],
     }
+
+
+@pytest.fixture
+def sample_listings():
+    """Sample parsed listings for testing upsert."""
+    from models import SourceType, AuctionStatus, PropertyType
+
+    return [
+        {
+            "source": SourceType.TORGIGOV,
+            "source_id": "lot-001",
+            "source_url": "https://torgi.gov.ru/new/public/lots/lot/lot-001",
+            "title": "Квартира 2-комн., 54 м²",
+            "property_type": PropertyType.APARTMENT,
+            "address": "г. Москва, ул. Ленина, д. 10",
+            "start_price": 8500000.0,
+            "current_price": 8500000.0,
+            "total_area": 54.0,
+            "rooms": 2,
+            "auction_status": AuctionStatus.ACTIVE,
+        },
+        {
+            "source": SourceType.TORGIGOV,
+            "source_id": "lot-002",
+            "source_url": "https://torgi.gov.ru/new/public/lots/lot/lot-002",
+            "title": "Земельный участок 10 соток",
+            "property_type": PropertyType.LAND,
+            "address": "МО, Одинцовский р-н",
+            "start_price": 3200000.0,
+            "current_price": 3200000.0,
+            "total_area": 1000.0,
+            "auction_status": AuctionStatus.UPCOMING,
+        },
+    ]

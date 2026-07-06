@@ -4,29 +4,36 @@ __pycache__/
 *$py.class
 *.so
 *.egg-info/
+*.egg
 dist/
 build/
-*.egg
 .eggs/
+*.whl
 
-# Virtual env
+# Virtual environments
 venv/
 .venv/
 env/
+ENV/
 
 # IDE
-.idea/
 .vscode/
+.idea/
 *.swp
 *.swo
 *~
 
-# Environment
+# Environment / secrets
 .env
-*.env.local
+.env.local
+.env.production
+*.pem
+*.key
 
-# Database
+# Database files
 *.db
+*.db-shm
+*.db-wal
 *.sqlite3
 
 # Logs
@@ -37,5 +44,24 @@ logs/
 .DS_Store
 Thumbs.db
 
-# Temp
-.openclaw/
+# Docker
+.docker/
+
+# Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Playwright
+playwright-report/
+test-results/
+
+# Scrapy
+.scrapy/
+
+# Node (frontend)
+node_modules/
+.next/
+out/

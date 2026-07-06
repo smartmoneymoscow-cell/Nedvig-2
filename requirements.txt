@@ -14,14 +14,15 @@ alembic==1.13.2
 requests==2.32.3
 beautifulsoup4==4.12.3
 lxml==5.2.2
-selenium==4.23.1
-undetected-chromedriver==3.5.5
-playwright==1.45.0
 
 # Proxy & anti-bot
 httpx[socks]==0.27.0
 fake-useragent==1.5.1
 curl-cffi==0.7.2
+
+# Playwright (optional, for JS-rendered sites)
+# Install: playwright install chromium
+playwright==1.45.0
 
 # Utils
 apscheduler==3.10.4

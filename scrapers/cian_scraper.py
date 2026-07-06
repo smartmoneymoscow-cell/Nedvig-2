@@ -3,11 +3,9 @@
 Used for market price estimation (обогащение рыночной оценкой).
 Searches for comparable properties and calculates average price per m².
 
-Real CIAN search URL pattern:
-https://cian.ru/cat.php?engine_version=2&p=1&region={id}&offer_type=flat&deal_type=sale&room1=1&room2=1
-
 Anti-detection strategy:
-- curl_cffi with TLS fingerprint impersonation
+- curl_cffi with TLS fingerprint impersonation (primary)
+- Playwright with stealth (fallback for anti-bot challenges)
 - Rotating proxies
 - Random delays (3-8s between requests)
 - Realistic browser headers
@@ -32,7 +30,7 @@ from models import PropertyType
 CIAN_BASE = "https://www.cian.ru"
 CIAN_SEARCH_PATH = "/cat.php"
 
-# CIAN region IDs (from actual URLs)
+# CIAN region IDs (verified from actual URLs)
 CIAN_REGIONS = {
     "москва": 1,
     "санкт-петербург": 2,
@@ -76,7 +74,7 @@ OFFER_TYPES = {
 
 # Room configuration for apartments
 ROOM_OPTIONS = {
-    None: "room1=1&room2=1&room3=1&room4=1&room9=1",  # All types
+    None: "room1=1&room2=1&room3=1&room4=1&room9=1",
     1: "room1=1",
     2: "room2=1",
     3: "room3=1",
@@ -91,6 +89,9 @@ class CianScraper(BaseScraper):
     def __init__(self):
         super().__init__("cian")
         self._session = None
+        self._playwright = None
+        self._browser = None
+        self._playwright_page = None
 
     def _create_session(self):
         """Create session with CIAN-specific headers."""
@@ -107,10 +108,46 @@ class CianScraper(BaseScraper):
         })
         return session
 
+    def _init_playwright(self):
+        """Initialize Playwright for anti-bot bypass."""
+        try:
+            from playwright.sync_api import sync_playwright
+            self._playwright = sync_playwright().start()
+            self._browser = self._playwright.chromium.launch(
+                headless=True,
+                args=[
+                    "--disable-blink-features=AutomationControlled",
+                    "--no-sandbox",
+                ]
+            )
+            context = self._browser.new_context(
+                viewport={"width": 1920, "height": 1080},
+                locale="ru-RU",
+                timezone_id="Europe/Moscow",
+            )
+            self._playwright_page = context.new_page()
+
+            # Stealth overrides
+            self._playwright_page.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+                Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
+                Object.defineProperty(navigator, 'languages', {get: () => ['ru-RU', 'ru', 'en']});
+                window.chrome = {runtime: {}};
+            """)
+
+            logger.info("[CIAN] Playwright initialized")
+            return True
+        except ImportError:
+            logger.warning("[CIAN] Playwright not installed")
+            return False
+        except Exception as e:
+            logger.error(f"[CIAN] Playwright init failed: {e}")
+            return False
+
     def _get_region_id(self, city: str) -> int:
         """Get CIAN region ID from city name."""
         city_lower = city.lower().strip() if city else ""
-        return CIAN_REGIONS.get(city_lower, 1)  # Default Moscow
+        return CIAN_REGIONS.get(city_lower, 1)
 
     def _build_search_url(
         self,
@@ -124,7 +161,6 @@ class CianScraper(BaseScraper):
         region_id = self._get_region_id(city)
         offer_type = OFFER_TYPES.get(property_type, "flat")
 
-        # Base params
         params = {
             "engine_version": 2,
             "p": 1,
@@ -134,7 +170,6 @@ class CianScraper(BaseScraper):
             "sort": "price_object_order",
         }
 
-        # Room filter
         if property_type == PropertyType.APARTMENT:
             if rooms and rooms in ROOM_OPTIONS:
                 params_str = ROOM_OPTIONS[rooms]
@@ -143,7 +178,6 @@ class CianScraper(BaseScraper):
         else:
             params_str = ""
 
-        # Area filter
         if area_min:
             params["mintarea"] = area_min * 0.7
         if area_max:
@@ -174,13 +208,23 @@ class CianScraper(BaseScraper):
             logger.warning("[CIAN] No area data for estimation")
             return None
 
+        # Try curl_cffi first, then Playwright
+        result = self._estimate_with_curl_cffi(city, property_type, rooms, total_area)
+        if result:
+            return result
+
+        logger.info("[CIAN] curl_cffi failed, trying Playwright")
+        return self._estimate_with_playwright(city, property_type, rooms, total_area)
+
+    def _estimate_with_curl_cffi(
+        self, city, property_type, rooms, total_area
+    ) -> Optional[dict]:
+        """Estimate using curl_cffi (fast, may be blocked)."""
         try:
             if not self._session:
                 self._session = self._create_session()
 
             self._throttle(3.0, 8.0)
-
-            # Build search URL
             url = self._build_search_url(
                 city=city,
                 property_type=property_type,
@@ -189,8 +233,7 @@ class CianScraper(BaseScraper):
                 area_max=total_area,
             )
 
-            logger.info(f"[CIAN] Searching: {url[:100]}...")
-
+            logger.info(f"[CIAN] Searching (curl_cffi): {url[:100]}...")
             response = self._session.get(url, timeout=30)
 
             if response.status_code == 403:
@@ -202,61 +245,75 @@ class CianScraper(BaseScraper):
                 logger.warning(f"[CIAN] HTTP {response.status_code}")
                 return None
 
-            # Parse HTML
-            soup = BeautifulSoup(response.text, "lxml")
-
-            # Extract prices from listing cards
-            prices = self._extract_prices(soup)
-
-            if len(prices) < 3:
-                logger.warning(f"[CIAN] Too few prices found: {len(prices)}")
-                # Try alternative parsing
-                prices = self._extract_prices_json(soup)
-
-            if len(prices) < 3:
-                logger.warning(f"[CIAN] Still too few prices: {len(prices)}")
-                return None
-
-            # Remove outliers (IQR method)
-            prices = self._remove_outliers(prices)
-
-            if len(prices) < 2:
-                return None
-
-            # Calculate average price per m²
-            avg_price_per_sqm = sum(prices) / len(prices)
-            market_price = avg_price_per_sqm * total_area
-
-            return {
-                "market_price": round(market_price, 2),
-                "price_per_sqm": round(avg_price_per_sqm, 2),
-                "comparable_count": len(prices),
-            }
+            return self._parse_prices_from_html(response.text, total_area)
 
         except Exception as e:
-            logger.error(f"[CIAN] Estimation failed: {e}")
+            logger.error(f"[CIAN] curl_cffi estimation failed: {e}")
             return None
+
+    def _estimate_with_playwright(
+        self, city, property_type, rooms, total_area
+    ) -> Optional[dict]:
+        """Estimate using Playwright (slower, bypasses anti-bot)."""
+        if not self._playwright_page:
+            if not self._init_playwright():
+                return None
+
+        try:
+            self._throttle(3.0, 8.0)
+            url = self._build_search_url(
+                city=city,
+                property_type=property_type,
+                rooms=rooms,
+                area_min=total_area,
+                area_max=total_area,
+            )
+
+            logger.info(f"[CIAN] Searching (Playwright): {url[:100]}...")
+            self._playwright_page.goto(url, wait_until="networkidle", timeout=30000)
+            self._playwright_page.wait_for_timeout(3000)
+
+            html = self._playwright_page.content()
+            return self._parse_prices_from_html(html, total_area)
+
+        except Exception as e:
+            logger.error(f"[CIAN] Playwright estimation failed: {e}")
+            return None
+
+    def _parse_prices_from_html(self, html: str, total_area: float) -> Optional[dict]:
+        """Parse prices from HTML and calculate market price."""
+        soup = BeautifulSoup(html, "lxml")
+
+        # Extract prices from listing cards
+        prices = self._extract_prices(soup)
+
+        if len(prices) < 3:
+            prices = self._extract_prices_json(soup)
+
+        if len(prices) < 3:
+            logger.warning(f"[CIAN] Too few prices found: {len(prices)}")
+            return None
+
+        # Remove outliers (IQR method)
+        prices = self._remove_outliers(prices)
+
+        if len(prices) < 2:
+            return None
+
+        avg_price_per_sqm = sum(prices) / len(prices)
+        market_price = avg_price_per_sqm * total_area
+
+        return {
+            "market_price": round(market_price, 2),
+            "price_per_sqm": round(avg_price_per_sqm, 2),
+            "comparable_count": len(prices),
+        }
 
     def _extract_prices(self, soup: BeautifulSoup) -> list[float]:
         """Extract prices per m² from HTML page."""
         prices = []
 
-        # Strategy 1: Find price elements with data attributes
-        price_elements = soup.select(
-            "[data-name='Price'] span, "
-            "span[data-mark='MainPrice'], "
-            "[class*='Price'] span, "
-            "[class*='price'] span"
-        )
-
-        # Strategy 2: Find area elements
-        area_elements = soup.select(
-            "[data-name='Area'] span, "
-            "[class*='Area'] span, "
-            "[class*='area'] span"
-        )
-
-        # Strategy 3: Try to match price/area pairs from card containers
+        # Find card containers
         cards = soup.select(
             "[data-name='OffersSerpItem'], "
             "[class*='CardSection'], "
@@ -270,11 +327,17 @@ class CianScraper(BaseScraper):
             if price and area and area > 0:
                 prices.append(price / area)
 
-        # Strategy 4: Fallback — parse all visible prices
+        # Fallback: parse all visible prices
         if not prices:
+            price_elements = soup.select(
+                "[data-name='Price'] span, "
+                "span[data-mark='MainPrice'], "
+                "[class*='Price'] span, "
+                "[class*='price'] span"
+            )
             for el in price_elements:
                 price = self._parse_price_element(el)
-                if price and price > 500000:  # Filter obvious non-prices
+                if price and price > 500000:
                     prices.append(price)
 
         return prices
@@ -283,7 +346,6 @@ class CianScraper(BaseScraper):
         """Try to extract prices from embedded JSON data."""
         prices = []
 
-        # Look for __NEXT_DATA__ or similar embedded JSON
         scripts = soup.find_all("script", type="application/json")
         for script in scripts:
             try:
@@ -344,7 +406,6 @@ class CianScraper(BaseScraper):
     def _parse_price_element(self, el) -> Optional[float]:
         """Parse price from an element's text."""
         text = el.get_text(strip=True)
-        # Remove currency symbols and spaces
         cleaned = re.sub(r"[^\d]", "", text)
         if cleaned:
             try:
@@ -380,7 +441,6 @@ class CianScraper(BaseScraper):
             estimation = self.estimate_market_price(prop)
             results.append(estimation or {})
 
-            # Rotate session periodically
             if (i + 1) % batch_size == 0:
                 self._rotate_session()
                 self._session = None
@@ -391,3 +451,22 @@ class CianScraper(BaseScraper):
     def scrape_listings(self, **kwargs) -> list[dict]:
         """Not used — CIAN is for price estimation only."""
         return []
+
+    def close(self):
+        """Clean up resources."""
+        if self._playwright_page:
+            try:
+                self._playwright_page.close()
+            except Exception:
+                pass
+        if self._browser:
+            try:
+                self._browser.close()
+            except Exception:
+                pass
+        if self._playwright:
+            try:
+                self._playwright.stop()
+            except Exception:
+                pass
+        super().close()

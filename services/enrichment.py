@@ -1,12 +1,17 @@
 """Enrichment service — orchestrates scraping, geocoding, and market appraisal.
 
 Pipeline:
-1. Scrape torgi.gov.ru (main source — includes all auction types)
-2. Scrape ETP platforms (supplementary — catches missing lots)
-3. Geocode addresses (Yandex Geocoder)
-4. Estimate market prices (CIAN)
+1. Scrape torgi.gov.ru (main source — government auctions)
+2. Scrape Fedresurs (bankruptcy property auctions)
+3. Scrape ETP platforms (supplementary — catches missing lots)
+4. Geocode addresses (Yandex Geocoder)
+5. Estimate market prices (CIAN)
+
+All synchronous scraper calls are wrapped in asyncio.to_thread() to avoid
+blocking the event loop.
 """
 
+import asyncio
 import time
 from datetime import datetime
 from typing import Optional
@@ -16,7 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models import AuctionProperty, ScrapeLog, SourceType
-from scrapers import TorgiGovScraper, CianScraper, EtpScraper
+from scrapers import TorgiGovScraper, CianScraper, FedresursScraper, EtpScraper
 from services.geocoder import geocoder
 from config import settings
 
@@ -39,28 +44,34 @@ class EnrichmentService:
         logger.info("=" * 60)
         await self._scrape_torgi(session, region_code, days_back)
 
-        # Step 2: Scrape ETP (supplementary)
+        # Step 2: Scrape Fedresurs (bankruptcy auctions)
         logger.info("=" * 60)
-        logger.info("STEP 2: Scraping ETP platforms")
+        logger.info("STEP 2: Scraping Fedresurs (bankruptcy)")
+        logger.info("=" * 60)
+        await self._scrape_fedresurs(session, days_back)
+
+        # Step 3: Scrape ETP (supplementary)
+        logger.info("=" * 60)
+        logger.info("STEP 3: Scraping ETP platforms")
         logger.info("=" * 60)
         await self._scrape_etp(session, days_back)
 
-        # Step 3: Geocode new properties
+        # Step 4: Geocode new properties
         logger.info("=" * 60)
-        logger.info("STEP 3: Geocoding addresses")
+        logger.info("STEP 4: Geocoding addresses")
         logger.info("=" * 60)
         await self._geocode_properties(session)
 
-        # Step 4: Market price estimation via CIAN
+        # Step 5: Market price estimation via CIAN
         logger.info("=" * 60)
-        logger.info("STEP 4: Market price estimation (CIAN)")
+        logger.info("STEP 5: Market price estimation (CIAN)")
         logger.info("=" * 60)
         await self._estimate_market_prices(session)
 
         elapsed = time.time() - start_time
         logger.info(f"Pipeline completed in {elapsed:.1f}s")
 
-    # --- Scraping ---
+    # --- Scraping (async-safe) ---
 
     async def _scrape_torgi(
         self,
@@ -68,17 +79,21 @@ class EnrichmentService:
         region_code: str = None,
         days_back: int = 30,
     ):
-        """Scrape and store torgi.gov.ru listings."""
+        """Scrape and store torgi.gov.ru listings (async-safe)."""
         log_entry = ScrapeLog(source=SourceType.TORGIGOV, status="running")
         session.add(log_entry)
         await session.flush()
 
         try:
-            with TorgiGovScraper() as scraper:
-                listings = scraper.scrape_listings(
-                    region_code=region_code,
-                    days_back=days_back,
-                )
+            # Run synchronous scraper in thread pool to avoid blocking event loop
+            def _run_scraper():
+                with TorgiGovScraper() as scraper:
+                    return scraper.scrape_listings(
+                        region_code=region_code,
+                        days_back=days_back,
+                    )
+
+            listings = await asyncio.to_thread(_run_scraper)
 
             new_count, update_count = await self._upsert_listings(session, listings)
 
@@ -98,9 +113,40 @@ class EnrichmentService:
             await session.flush()
             logger.error(f"[torgi.gov.ru] Scrape failed: {e}")
 
+    async def _scrape_fedresurs(self, session: AsyncSession, days_back: int = 30):
+        """Scrape and store Fedresurs (bankruptcy) listings (async-safe)."""
+        log_entry = ScrapeLog(source=SourceType.FEDRESURS, status="running")
+        session.add(log_entry)
+        await session.flush()
+
+        try:
+            def _run_scraper():
+                with FedresursScraper() as scraper:
+                    return scraper.scrape_listings(days_back=days_back)
+
+            listings = await asyncio.to_thread(_run_scraper)
+
+            new_count, update_count = await self._upsert_listings(session, listings)
+
+            log_entry.finished_at = datetime.utcnow()
+            log_entry.items_found = len(listings)
+            log_entry.items_new = new_count
+            log_entry.items_updated = update_count
+            log_entry.status = "success"
+            await session.flush()
+
+            logger.info(f"[Fedresurs] Stored: {new_count} new, {update_count} updated")
+
+        except Exception as e:
+            log_entry.status = "error"
+            log_entry.errors = str(e)
+            log_entry.finished_at = datetime.utcnow()
+            await session.flush()
+            logger.error(f"[Fedresurs] Scrape failed: {e}")
+
     async def _scrape_etp(self, session: AsyncSession, days_back: int = 30):
-        """Scrape and store ETP listings (supplementary)."""
-        log_entry = ScrapeLog(source=SourceType.GOSPLAN, status="running")
+        """Scrape and store ETP listings (async-safe)."""
+        log_entry = ScrapeLog(source=SourceType.ETP, status="running")
         session.add(log_entry)
         await session.flush()
 
@@ -110,8 +156,11 @@ class EnrichmentService:
 
             for platform in ["lot-online", "fabrikant"]:
                 try:
-                    with EtpScraper(platform=platform) as scraper:
-                        listings = scraper.scrape_listings(days_back=days_back)
+                    def _run_etp(platform=platform):
+                        with EtpScraper(platform=platform) as scraper:
+                            return scraper.scrape_listings(days_back=days_back)
+
+                    listings = await asyncio.to_thread(_run_etp)
 
                     new_count, update_count = await self._upsert_listings(session, listings)
                     total_new += new_count
@@ -166,9 +215,9 @@ class EnrichmentService:
         await session.flush()
         return new_count, update_count
 
-    # --- Geocoding ---
+    # --- Geocoding (with retry) ---
 
-    async def _geocode_properties(self, session: AsyncSession):
+    async def _geocode_properties(self, session: AsyncSession, batch_size: int = 200):
         """Geocode properties that don't have coordinates yet."""
         result = await session.execute(
             select(AuctionProperty)
@@ -177,7 +226,7 @@ class EnrichmentService:
                 AuctionProperty.address.isnot(None),
                 AuctionProperty.address != "",
             )
-            .limit(200)
+            .limit(batch_size)
         )
         properties = result.scalars().all()
 
@@ -188,6 +237,7 @@ class EnrichmentService:
         logger.info(f"Geocoding {len(properties)} properties")
 
         geocoded = 0
+        failed = 0
         for prop in properties:
             try:
                 coords = geocoder.geocode(prop.address, prop.city)
@@ -199,17 +249,20 @@ class EnrichmentService:
                 else:
                     # Mark as attempted (don't retry forever)
                     prop.is_geocoded = True
+                    failed += 1
             except Exception as e:
                 logger.warning(f"Geocode error for '{prop.address[:50]}': {e}")
+                failed += 1
 
-            time.sleep(0.5)
+            # Rate limit: 0.5s between requests
+            await asyncio.sleep(0.5)
 
         await session.flush()
-        logger.info(f"Geocoded {geocoded}/{len(properties)}")
+        logger.info(f"Geocoded {geocoded}/{len(properties)} ({failed} failed)")
 
     # --- Market Appraisal ---
 
-    async def _estimate_market_prices(self, session: AsyncSession):
+    async def _estimate_market_prices(self, session: AsyncSession, batch_size: int = 50):
         """Estimate market prices for properties without appraisal."""
         result = await session.execute(
             select(AuctionProperty)
@@ -219,7 +272,7 @@ class EnrichmentService:
                 AuctionProperty.start_price.isnot(None),
                 AuctionProperty.property_type.in_(["apartment", "house", "room"]),
             )
-            .limit(50)
+            .limit(batch_size)
         )
         properties = result.scalars().all()
 
@@ -230,43 +283,54 @@ class EnrichmentService:
         logger.info(f"Estimating market prices for {len(properties)} properties")
 
         estimated = 0
-        with CianScraper() as cian:
-            for i, prop in enumerate(properties):
-                prop_data = {
-                    "city": prop.city or "Москва",
-                    "property_type": prop.property_type,
-                    "rooms": prop.rooms,
-                    "total_area": prop.total_area,
-                    "address": prop.address,
-                }
 
-                estimation = cian.estimate_market_price(prop_data)
+        def _run_cian_estimation(properties_list):
+            """Run CIAN estimation in thread pool."""
+            results = []
+            with CianScraper() as cian:
+                for i, prop in enumerate(properties_list):
+                    prop_data = {
+                        "city": prop.city or "Москва",
+                        "property_type": prop.property_type,
+                        "rooms": prop.rooms,
+                        "total_area": prop.total_area,
+                        "address": prop.address,
+                    }
 
-                if estimation:
-                    est_per_sqm = estimation.get("price_per_sqm")
-                    if est_per_sqm and prop.total_area:
-                        prop.market_price = est_per_sqm * prop.total_area
+                    estimation = cian.estimate_market_price(prop_data)
+                    results.append((prop, estimation))
 
-                    if prop.start_price and prop.market_price and prop.market_price > 0:
-                        prop.discount_pct = round(
-                            (1 - prop.start_price / prop.market_price) * 100, 1
-                        )
+                    # Rotate session every 10 properties
+                    if (i + 1) % 10 == 0:
+                        cian._rotate_session()
+                        cian._session = None
+                        time.sleep(5)
 
-                    estimated += 1
-                    logger.info(
-                        f"[CIAN] {prop.title[:40]}: "
-                        f"auction={prop.start_price:,.0f}, "
-                        f"market={prop.market_price:,.0f}, "
-                        f"discount={prop.discount_pct}%"
+            return results
+
+        # Run CIAN in thread pool
+        results = await asyncio.to_thread(_run_cian_estimation, properties)
+
+        for prop, estimation in results:
+            if estimation:
+                est_per_sqm = estimation.get("price_per_sqm")
+                if est_per_sqm and prop.total_area:
+                    prop.market_price = est_per_sqm * prop.total_area
+
+                if prop.start_price and prop.market_price and prop.market_price > 0:
+                    prop.discount_pct = round(
+                        (1 - prop.start_price / prop.market_price) * 100, 1
                     )
 
-                prop.is_market_appraised = True
+                estimated += 1
+                logger.info(
+                    f"[CIAN] {prop.title[:40]}: "
+                    f"auction={prop.start_price:,.0f}, "
+                    f"market={prop.market_price:,.0f}, "
+                    f"discount={prop.discount_pct}%"
+                )
 
-                # Rotate session every 10 properties
-                if (i + 1) % 10 == 0:
-                    cian._rotate_session()
-                    cian._session = None
-                    time.sleep(5)
+            prop.is_market_appraised = True
 
         await session.flush()
         logger.info(f"Market appraisal: {estimated}/{len(properties)} estimated")
