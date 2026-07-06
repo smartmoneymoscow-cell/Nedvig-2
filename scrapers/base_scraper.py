@@ -44,7 +44,7 @@ class BaseScraper(ABC):
 
     def _create_session(self) -> curl_requests.Session:
         """Create a curl_cffi session with TLS fingerprint impersonation."""
-        session = curl_requests.Session(impersonate="chrome120")
+        session = curl_requests.Session(impersonate="chrome120", verify=False)
         headers = proxy_manager.get_headers()
         session.headers.update(headers)
 
