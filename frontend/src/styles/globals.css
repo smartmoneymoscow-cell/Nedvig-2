@@ -1,0 +1,63 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #f9fafb;
+  --bg-card: #ffffff;
+  --text: #111827;
+  --text-secondary: #6b7280;
+  --accent: #dc2626;
+  --green: #059669;
+  --border: #e5e7eb;
+}
+
+.dark {
+  --bg: #111827;
+  --bg-card: #1f2937;
+  --text: #f9fafb;
+  --text-secondary: #9ca3af;
+  --accent: #ef4444;
+  --green: #34d399;
+  --border: #374151;
+}
+
+body {
+  font-family: 'Source Sans 3', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* Leaflet fixes */
+.leaflet-container {
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+}
+
+/* Custom marker cluster */
+.marker-cluster-small { background-color: rgba(239, 68, 68, 0.2); }
+.marker-cluster-small div { background-color: rgba(239, 68, 68, 0.6); }
+.marker-cluster-medium { background-color: rgba(239, 68, 68, 0.3); }
+.marker-cluster-medium div { background-color: rgba(239, 68, 68, 0.7); }
+.marker-cluster-large { background-color: rgba(239, 68, 68, 0.4); }
+.marker-cluster-large div { background-color: rgba(239, 68, 68, 0.8); }
+
+/* Detail panel scrollbar */
+@layer components {
+  .input {
+    @apply w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded text-sm outline-none focus:border-red-500 transition-colors;
+  }
+}
+
+@keyframes slide-in {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+.animate-slide-in {
+  animation: slide-in 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.detail-scroll::-webkit-scrollbar { width: 6px; }
+.detail-scroll::-webkit-scrollbar-track { background: transparent; }
+.detail-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }

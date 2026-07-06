@@ -3,13 +3,13 @@ version: "3.8"
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: estate_postgres
+    container_name: nedvig_postgres
     environment:
       POSTGRES_DB: estate_auction
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
     ports:
-      - "${DB_PORT:-5432}:5432"
+      - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -18,32 +18,50 @@ services:
       timeout: 5s
       retries: 5
 
-  app:
-    build: .
-    container_name: estate_app
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: nedvig_api
     ports:
-      - "${APP_PORT:-8000}:8000"
+      - "8000:8000"
     environment:
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_NAME=estate_auction
-      - DB_USER=postgres
-      - DB_PASSWORD=${DB_PASSWORD:-postgres}
-      - YANDEX_MAPS_API_KEY=${YANDEX_MAPS_API_KEY}
-      - PROXY_LIST=${PROXY_LIST}
-      - ADMIN_API_KEY=${ADMIN_API_KEY}
-      - CORS_ORIGINS=${CORS_ORIGINS:-*}
-      - SCRAPE_INTERVAL_HOURS=${SCRAPE_INTERVAL_HOURS:-6}
-      - DEBUG=${DEBUG:-false}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: estate_auction
+      DB_USER: postgres
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      ADMIN_API_KEY: ${ADMIN_API_KEY:-}
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
+      CORS_ORIGINS: "http://localhost:5173,http://localhost:3000"
+      DEBUG: "true"
     depends_on:
       postgres:
         condition: service_healthy
     volumes:
-      - .:/app
-    working_dir: /app
-    command: >
-      sh -c "alembic upgrade head &&
-             uvicorn main:app --host 0.0.0.0 --port 8000"
+      - ./api:/app
+
+  scraper-worker:
+    build:
+      context: ./scraper-worker
+      dockerfile: Dockerfile
+    container_name: nedvig_scraper
+    ports:
+      - "8001:8001"
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: estate_auction
+      DB_USER: postgres
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      SCRAPE_INTERVAL_HOURS: ${SCRAPE_INTERVAL_HOURS:-6}
+      USE_TOR: "false"
+      DEBUG: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./scraper-worker:/app
 
 volumes:
   pgdata:

@@ -1,0 +1,31 @@
+# Scraper Worker requirements
+# Scraping
+requests==2.32.3
+beautifulsoup4==4.12.3
+lxml==5.2.2
+
+# Anti-bot
+httpx[socks]==0.27.0
+fake-useragent==1.5.1
+curl-cffi==0.7.2
+
+# Playwright (optional)
+playwright==1.45.0
+
+# Database
+sqlalchemy==2.0.35
+asyncpg==0.29.0
+psycopg2-binary==2.9.9
+alembic==1.13.2
+
+# Utils
+apscheduler==3.10.4
+python-dotenv==1.0.1
+pydantic==2.9.1
+pydantic-settings==2.5.2
+loguru==0.7.2
+tenacity==9.0.0
+
+# Web framework (for health check + trigger endpoint)
+fastapi==0.115.0
+uvicorn[standard]==0.30.0
