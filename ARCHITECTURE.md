@@ -2,7 +2,8 @@
 
 ## 1. Обзор
 
-Сервис агрегирует данные о недвижимости на государственных торгах, обогащает их рыночной оценкой и отображает на интерактивной карте.
+Сервис агрегирует данные о недвижимости на государственных торгах и торгах банкротов,
+обогащает их рыночной оценкой и отображает на интерактивной карте.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -12,53 +13,53 @@
                              │ HTTPS
                              ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                      Nginx (reverse proxy)                          │
-│  ┌──────────────┐  ┌──────────────┐  ┌───────────────────────────┐  │
-│  │ Статика       │  │ API прокси   │  │ SSL termination          │  │
-│  │ (CSS/JS/IMG)  │  │ → uvicorn    │  │ Rate limiting            │  │
-│  └──────────────┘  └──────────────┘  │ Gzip compression          │  │
-│                                       └───────────────────────────┘  │
-└────────────────────────────┬────────────────────────────────────────┘
-                             │
-                             ▼
-┌─────────────────────────────────────────────────────────────────────┐
 │                    FastAPI Application (uvicorn)                     │
 │                                                                     │
 │  ┌─────────────────────────────────────────────────────────────┐   │
+│  │                    Middleware                                 │   │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐  │   │
+│  │  │ Rate Limiting │  │ CORS         │  │ Security Headers │  │   │
+│  │  │ (10 req/s)    │  │              │  │ (X-Frame, XSS)   │  │   │
+│  │  └──────────────┘  └──────────────┘  └──────────────────┘  │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                     │
+│  ┌─────────────────────────────────────────────────────────────┐   │
 │  │                    API Layer (api/routes.py)                  │   │
+│  │  GET /health           — health check                       │   │
 │  │  GET /api/properties    — список с фильтрами                │   │
 │  │  GET /api/properties/:id — детали объекта                   │   │
 │  │  GET /api/map-data      — оптимизированные данные для карты │   │
 │  │  GET /api/stats         — агрегированная статистика         │   │
 │  │  GET /api/scrape-logs   — логи парсинга                     │   │
-│  │  POST /api/scrape/trigger — ручной запуск сбора             │   │
+│  │  POST /api/scrape/trigger — ручной запуск сбора (auth)      │   │
 │  └─────────────────────────────────────────────────────────────┘   │
 │                                                                     │
 │  ┌─────────────────────────────────────────────────────────────┐   │
 │  │                  Services Layer                               │   │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐   │   │
-│  │  │ Enrichment    │  │ Geocoder     │  │ Scheduler        │   │   │
-│  │  │ Service       │  │ (Yandex API) │  │ (APScheduler)    │   │   │
-│  │  │ (оркестратор) │  │              │  │                  │   │   │
-│  │  └──────────────┘  └──────────────┘  └──────────────────┘   │   │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐  │   │
+│  │  │ Enrichment    │  │ Geocoder     │  │ Scheduler        │  │   │
+│  │  │ Service       │  │ (Yandex API) │  │ (APScheduler)    │  │   │
+│  │  │ (async-safe)  │  │              │  │                  │  │   │
+│  │  └──────────────┘  └──────────────┘  └──────────────────┘  │   │
 │  └─────────────────────────────────────────────────────────────┘   │
 │                                                                     │
 │  ┌─────────────────────────────────────────────────────────────┐   │
 │  │                  Scrapers Layer                               │   │
-│  │  ┌────────────┐  ┌────────────┐  ┌────────────────────┐     │   │
-│  │  │ TorgiGov    │  │ GosPlan    │  │ CIAN               │     │   │
-│  │  │ Scraper     │  │ Scraper    │  │ Scraper            │     │   │
-│  │  │ (API+HTML)  │  │ (API+HTML) │  │ (market price)     │     │   │
-│  │  └──────┬─────┘  └──────┬─────┘  └─────────┬──────────┘     │   │
+│  │  ┌────────────┐  ┌────────────┐  ┌────────────────────┐    │   │
+│  │  │ TorgiGov    │  │ Fedresurs  │  │ CIAN               │    │   │
+│  │  │ Scraper     │  │ Scraper    │  │ Scraper            │    │   │
+│  │  │ (verified   │  │ (Playwright│  │ (market price)     │    │   │
+│  │  │  API)       │  │  + httpx)  │  │                    │    │   │
+│  │  └──────┬─────┘  └──────┬─────┘  └─────────┬──────────┘    │   │
 │  │         │               │                   │                │   │
-│  │  ┌──────┴───────────────┴───────────────────┴──────────┐     │   │
-│  │  │           Anti-Detection Layer                        │     │   │
-│  │  │  ┌─────────────┐  ┌──────────┐  ┌────────────────┐  │     │   │
-│  │  │  │ProxyManager  │  │curl_cffi │  │ User-Agent     │  │     │   │
-│  │  │  │(rotation,    │  │(TLS      │  │ Rotation       │  │     │   │
-│  │  │  │ health-check)│  │fingerpr.)│  │ (fake-ua)      │  │     │   │
-│  │  │  └─────────────┘  └──────────┘  └────────────────┘  │     │   │
-│  │  └──────────────────────────────────────────────────────┘     │   │
+│  │  ┌──────┴───────────────┴───────────────────┴──────────┐    │   │
+│  │  │           Anti-Detection Layer                        │    │   │
+│  │  │  ┌─────────────┐  ┌──────────┐  ┌────────────────┐  │    │   │
+│  │  │  │ProxyManager  │  │curl_cffi │  │ Playwright     │  │    │   │
+│  │  │  │(rotation,    │  │(TLS      │  │ (JS rendering, │  │    │   │
+│  │  │  │ health-check)│  │fingerpr.)│  │  stealth)      │  │    │   │
+│  │  │  └─────────────┘  └──────────┘  └────────────────┘  │    │   │
+│  │  └──────────────────────────────────────────────────────┘    │   │
 │  └─────────────────────────────────────────────────────────────┘   │
 │                                                                     │
 │  ┌─────────────────────────────────────────────────────────────┐   │
@@ -77,35 +78,45 @@
 │   - auction_properties│  │  │ Yandex Maps  │  │ Yandex Geocoder │  │
 │   - scrape_logs       │  │  │ API          │  │ API             │  │
 │   - индексы           │  │  └──────────────┘  └─────────────────┘  │
-│   - WAL mode          │  └──────────────────────────────────────────┘
-└──────────────────────┘
+└──────────────────────┘  └──────────────────────────────────────────┘
 ```
 
 ---
 
 ## 2. Слои архитектуры
 
-### 2.1 Presentation Layer (фронтенд)
+### 2.1 Middleware Layer
 
-| Компонент | Технология | Назначение |
-|-----------|-----------|------------|
-| Карта | Яндекс.Карты JS API 2.1 | Отображение объектов с кластеризацией |
-| UI | Vanilla JS + CSS | Фильтры, легенда, панель деталей |
-| Шаблоны | Jinja2 | Server-side rendering HTML |
-
-**Цветовая маркировка** (дата публикации):
+#### Rate Limiting
 ```
-Сегодня      → #e74c3c (красный)
-1-3 дня      → #e67e22 (оранжевый)
-4-7 дней     → #f1c40f (жёлтый)
-2-4 недели   → #2ecc71 (зелёный)
-1-3 месяца   → #3498db (синий)
-3+ месяцев   → #9b59b6 (фиолетовый)
+RateLimiter (in-memory)
+├── General: 10 requests/second per IP
+├── Scrape trigger: 0.5 requests/second per IP
+├── Cleanup: every 60 seconds
+└── Response: 429 Too Many Requests + Retry-After header
 ```
 
-**Кластеризация**: `ymaps.Clusterer` с автоматической группировкой при зуме < 12.
+#### Security Headers
+```
+X-Content-Type-Options: nosniff
+X-Frame-Options: DENY
+X-XSS-Protection: 1; mode=block
+Referrer-Policy: strict-origin-when-cross-origin
+```
 
-**Балуны**: HTML-шаблон с ценой, рыночной оценкой, скидкой, ссылкой на источник.
+#### CORS
+- Configurable via `CORS_ORIGINS` env var
+- Default: `*` (open)
+- Methods: GET, POST
+
+#### Authentication
+```
+POST /api/scrape/trigger
+├── Header: Authorization: Bearer <API_KEY>
+├── Or query param: ?api_key=<API_KEY>
+├── Uses secrets.compare_digest (timing-safe)
+└── No key configured = open access (dev mode)
+```
 
 ### 2.2 API Layer
 
@@ -116,6 +127,9 @@ GET /api/properties
 │                 has_coords, has_market_price,
 │                 date_from, date_to, sort_by, sort_order,
 │                 page, page_size
+├── sort_by: whitelist validated (publish_date, start_price, etc.)
+├── sort_order: validated (asc/desc only)
+├── property_type/status/source: validated against enum values
 ├── Response: { total, page, page_size, pages, items[] }
 └── Max page_size: 500
 
@@ -127,7 +141,7 @@ GET /api/map-data
 ├── Response: [{ id, lat, lon, title, price, market_price,
 │                discount_pct, area, rooms, status, type,
 │                publish_date, source, url }]
-└── Limit: 5000 objects (оптимизация для карты)
+└── Limit: 5000 objects
 
 GET /api/stats
 └── Response: { total, by_source, by_status, avg_discount,
@@ -137,65 +151,54 @@ GET /api/scrape-logs?limit=20
 └── Response: [{ id, source, started_at, finished_at,
                  items_found, items_new, items_updated, status }]
 
-POST /api/scrape/trigger
+POST /api/scrape/trigger (auth required)
 └── Response: { status: "started" }
-```
 
-**Rate limiting**: через Nginx (10 req/s per IP для API, 2 req/s для scrape/trigger).
+GET /health
+└── Response: { status: "ok", version: "1.0.0" }
+```
 
 ### 2.3 Services Layer
 
-#### EnrichmentService (оркестратор)
+#### EnrichmentService (async-safe оркестратор)
 
 ```
 run_full_pipeline()
 │
-├── Step 1a: TorgiGovScraper.scrape_listings()
-│   ├── API-запрос → парсинг JSON
-│   ├── Fallback: HTML scraping
+├── Step 1: TorgiGovScraper (asyncio.to_thread)
+│   ├── Verified API: /new/api/public/lotcards/search
+│   ├── Params: lotStatus=PUBLISHED,APPLICATIONS_SUBMISSION,DETERMINING_WINNER
+│   │           byFirstVersion=true, withFacets=true
+│   │           dynSubjRF={region_code}, text={search_text}
 │   └── UPSERT в auction_properties
 │
-├── Step 1b: GosPlanScraper.scrape_listings()
-│   ├── API-запрос → парсинг JSON
-│   ├── Fallback: HTML scraping
+├── Step 2: FedresursScraper (asyncio.to_thread)
+│   ├── Playwright (JS rendering for SPA)
+│   ├── httpx fallback (API endpoints)
+│   ├── HTML scraping fallback
 │   └── UPSERT в auction_properties
 │
-├── Step 2: Geocoder.batch_geocode()
-│   ├── SELECT WHERE is_geocoded = false LIMIT 100
+├── Step 3: EtpScraper (asyncio.to_thread)
+│   ├── lot-online.ru, fabrikant.ru
+│   └── UPSERT в auction_properties
+│
+├── Step 4: Geocoder (async, batch=200)
+│   ├── SELECT WHERE is_geocoded = false LIMIT 200
 │   ├── Yandex Geocoder API (0.5s delay)
 │   └── UPDATE latitude, longitude, is_geocoded
 │
-└── Step 3: CianScraper.batch_estimate()
-    ├── SELECT WHERE is_market_appraised = false LIMIT 20
-    ├── CIAN API → поиск сопоставимых объектов
-    ├── Усреднение цены/м², отбрасывание выбросов
-    └── UPDATE market_price, discount_pct, is_market_appraised
+└── Step 5: CianScraper (asyncio.to_thread, batch=50)
+    ├── SELECT WHERE is_market_appraised = false LIMIT 50
+    ├── curl_cffi → Playwright fallback
+    ├── IQR outlier removal
+    └── UPDATE market_price, discount_pct
 ```
 
 #### Geocoder
-
 - API: Яндекс Геокодер (`https://geocode-maps.yandex.ru/1.x`)
 - Кэш: in-memory dict (адрес → координаты)
 - Rate limit: 0.5s между запросами
-- Пакетная обработка: до 100 адресов за запуск
-
-#### Планировщик (APScheduler)
-
-```
-┌────────────────────────────────────────┐
-│         AsyncIOScheduler               │
-│                                        │
-│  ┌──────────────────────────────────┐  │
-│  │ Job: main_scrape                  │  │
-│  │ Trigger: interval (6h)            │  │
-│  │ Target: enrichment_service        │  │
-│  │   .run_full_pipeline()            │  │
-│  └──────────────────────────────────┘  │
-│                                        │
-│  (расширяемо: добавить jobs для        │
-│   геокодирования, переоценки и т.д.)   │
-└────────────────────────────────────────┘
-```
+- Пакетная обработка: до 200 адресов за запуск
 
 ### 2.4 Scrapers Layer
 
@@ -205,6 +208,10 @@ run_full_pipeline()
 BaseScraper
 ├── curl_cffi (impersonate="chrome120")
 │   └── TLS fingerprint = Chrome 120 (обходит JA3-детект)
+├── Playwright (fallback для сложных anti-bot)
+│   ├── Stealth overrides (webdriver, plugins, languages)
+│   ├── headless Chromium
+│   └── JS rendering для SPA-сайтов
 ├── ProxyManager
 │   ├── Ротация: round-robin по healthy-прокси
 │   ├── Health-check: каждые 5 мин (httpbin.org/ip)
@@ -220,84 +227,84 @@ BaseScraper
     └── tenacity: 3 попытки, exponential backoff (5-60s)
 ```
 
-#### TorgiGovScraper
+#### TorgiGovScraper (verified API)
 
 ```
 Входные данные:
 ├── region_code (OKATO, "77" = Москва)
+├── search_text (опционально)
 ├── days_back (30)
-└── max_pages (50)
+└── max_pages (100)
 
 Pipeline:
-├── 1. API endpoint: /new/api/public/lotcards/search
-│   ├── Параметры: region, lotPropertyType=2, publishDateFrom, page
-│   ├── Ответ: JSON { content: [...] }
+├── API endpoint: /new/api/public/lotcards/search
+│   ├── Параметры (verified):
+│   │   ├── lotStatus=PUBLISHED,APPLICATIONS_SUBMISSION,DETERMINING_WINNER
+│   │   ├── byFirstVersion=true
+│   │   ├── withFacets=true
+│   │   ├── size={page_size} (max 100)
+│   │   ├── sort=firstVersionPublicationDate,desc
+│   │   ├── page={page_number}
+│   │   ├── dynSubjRF={region_code} (optional)
+│   │   ├── text={search_text} (optional)
+│   │   └── catCode={category_code} (optional)
+│   ├── Ответ: JSON { content: [...], totalPages, totalElements }
 │   └── Парсинг: _parse_lot_card()
 │
-├── 2. Fallback: HTML scraping
-│   ├── URL: /new/public/lots/reg?page=N
-│   ├── Селекторы: .lot-card, .lotItem, tr.lot-row
-│   └── BeautifulSoup + lxml
-│
-└── 3. Детали лота (опционально)
-    └── API: /new/api/public/lotcards/{lotId}
-
 Парсинг лота:
-├── source_id: lotId / lotNumber
+├── source_id: id
 ├── title: lotName
-├── address: lotAddress
-├── start_price: startPrice (float)
-├── total_area: totalArea (float)
-├── publish_date: publishDate (DD.MM.YYYY)
-├── auction_date_start: biddingStartDate (DD.MM.YYYY HH:MM)
-├── auction_status: lotStatus → enum
-├── property_type: _detect_property_type(title + description)
+├── address: lotName (contains full address)
+├── start_price: priceMin || startPrice
+├── total_area: characteristics[totalAreaRealty] || characteristics[SquareZU]
+├── rooms: regex from title (\d+)-комн
+├── floor: regex from characteristics[locationObjectRealty]
+├── total_floors: characteristics[numberFloors]
+├── auction_status: lotStatus → STATUS_MAP
+├── publish_date: noticeFirstVersionPublicationDate
+├── auction_date_end: biddEndTime
 └── price_per_sqm: start_price / total_area
 ```
 
-#### GosPlanScraper
+#### FedresursScraper (bankruptcy auctions)
 
 ```
-Входные данные:
-├── city (опционально)
-├── days_back (30)
-└── max_pages (50)
-
 Pipeline:
-├── 1. API: /api/v1/lots?page=N&type=real_estate
-│   └── Парсинг: _parse_listing()
-├── 2. Fallback: HTML scraping
-│   └── Селекторы: .lot-card, .auction-card, .property-card
-└── Аналогичная структура данных
+├── 1. Playwright (primary — SPA site)
+│   ├── Navigate to bankrot.fedresurs.ru/TradeList
+│   ├── Stealth overrides (navigator.webdriver)
+│   ├── Extract cards from DOM
+│   └── Pagination via next button
+│
+├── 2. httpx fallback (API endpoints)
+│   ├── Try: /api/v1/trades, /api/trades/search
+│   └── Parse JSON response
+│
+└── 3. HTML scraping fallback
+    ├── BeautifulSoup
+    ├── Look for embedded JSON
+    └── Parse visible cards
 ```
 
-#### CianScraper (рыночная оценка)
+#### CianScraper (market price estimation)
 
 ```
-Входные данные (от EnrichmentService):
-├── city: str
-├── property_type: PropertyType
-├── rooms: int
-├── total_area: float
-└── address: str
-
 Pipeline:
-├── 1. API: POST api.cian.ru/search-offers/v2/search-offers-desktop/
-│   ├── Payload: { jsonQuery: { _type, geo, room, total_area±30% } }
-│   ├── Ответ: { data: { offersSerialized: [...] } }
-│   ├── Сбор цен за м² из 20 сопоставимых
-│   ├── Отбрасывание выбросов (первый + последний квартиль)
-│   └── Усреднение → price_per_sqm
+├── 1. curl_cffi (primary)
+│   ├── Build URL: cian.ru/cat.php?engine_version=2&region={id}&...
+│   ├── Area filter: ±30% of target area
+│   └── Parse HTML for price/area pairs
 │
-├── 2. Fallback: HTML scraping
-│   ├── URL: cian.ru/prodam/kvartiry/?total_area[min]=X&total_area[max]=Y
-│   ├── Селекторы: [data-name='Price'], .price, span[data-mark='MainPrice']
-│   └── Парсинг цен из текста ("12 500 000 ₽")
+├── 2. Playwright fallback (anti-bot bypass)
+│   ├── Same URL
+│   ├── Wait for networkidle
+│   └── Parse rendered HTML
 │
-└── Выходные данные:
-    ├── market_price: avg_price_per_sqm × total_area
-    ├── price_per_sqm: float
-    └── comparable_count: int
+└── Processing:
+    ├── Extract price/area from cards
+    ├── Extract from embedded JSON (__NEXT_DATA__)
+    ├── IQR outlier removal
+    └── avg_price_per_sqm × total_area → market_price
 ```
 
 ### 2.5 Data Layer
@@ -307,46 +314,46 @@ Pipeline:
 ```
 auction_properties
 ├── id              SERIAL PRIMARY KEY
-├── source          VARCHAR(50)     -- 'torgi_gov' | 'gosplan'
+├── source          VARCHAR(50)     -- torgi_gov|gosplan|fedresurs|etp
 ├── source_id       VARCHAR(255)    -- ID в источнике
 ├── source_url      TEXT            -- Ссылка на лот
 │
-├── title           TEXT            -- Название
-├── description     TEXT            -- Описание
-├── property_type   VARCHAR(50)     -- apartment|house|land|...
+├── title           TEXT
+├── description     TEXT
+├── property_type   VARCHAR(50)     -- apartment|house|land|commercial|room|garage
 │
-├── address         TEXT            -- Адрес
-├── region          VARCHAR(255)    -- Регион
-├── city            VARCHAR(255)    -- Город
-├── latitude        FLOAT           -- Широта
-├── longitude       FLOAT           -- Долгота
+├── address         TEXT
+├── region          VARCHAR(255)
+├── city            VARCHAR(255)
+├── latitude        FLOAT
+├── longitude       FLOAT
 │
-├── total_area      FLOAT           -- Площадь общая (м²)
-├── living_area     FLOAT           -- Площадь жилая (м²)
-├── rooms           INTEGER         -- Комнат
-├── floor           INTEGER         -- Этаж
-├── total_floors    INTEGER         -- Этажность
+├── total_area      FLOAT           -- м²
+├── living_area     FLOAT
+├── rooms           INTEGER
+├── floor           INTEGER
+├── total_floors    INTEGER
 │
-├── start_price     FLOAT           -- Начальная цена
-├── current_price   FLOAT           -- Текущая цена
-├── market_price    FLOAT           -- Рыночная оценка (ЦИАН)
-├── price_per_sqm   FLOAT           -- Цена за м²
-├── discount_pct    FLOAT           -- Скидка от рынка (%)
+├── start_price     FLOAT
+├── current_price   FLOAT
+├── market_price    FLOAT           -- CIAN estimation
+├── price_per_sqm   FLOAT
+├── discount_pct    FLOAT           -- (1 - auction/market) × 100
 │
 ├── auction_status  VARCHAR(50)     -- active|upcoming|completed|cancelled
-├── auction_date_start  TIMESTAMP  -- Начало торгов
-├── auction_date_end    TIMESTAMP  -- Конец торгов
-├── publish_date    DATE            -- Дата публикации
-├── lot_number      VARCHAR(100)    -- Номер лота
-├── organizer       TEXT            -- Организатор
-├── bid_step        FLOAT           -- Шаг торгов
-├── deposit         FLOAT           -- Задаток
+├── auction_date_start  TIMESTAMP
+├── auction_date_end    TIMESTAMP
+├── publish_date    DATE
+├── lot_number      VARCHAR(100)
+├── organizer       TEXT
+├── bid_step        FLOAT
+├── deposit         FLOAT
 │
-├── raw_data        JSON            -- Исходные данные (для отладки)
-├── created_at      TIMESTAMP       -- Создание записи
-├── updated_at      TIMESTAMP       -- Обновление записи
-├── is_geocoded     BOOLEAN         -- Геокодирован?
-└── is_market_appraised BOOLEAN     -- Оценён?
+├── raw_data        JSON
+├── created_at      TIMESTAMP
+├── updated_at      TIMESTAMP
+├── is_geocoded     BOOLEAN
+└── is_market_appraised BOOLEAN
 
 Индексы:
 ├── ix_source_source_id  UNIQUE (source, source_id)
@@ -356,130 +363,31 @@ auction_properties
 └── ix_coords            (latitude, longitude)
 ```
 
-#### Модель: ScrapeLog
-
-```
-scrape_logs
-├── id              SERIAL PRIMARY KEY
-├── source          VARCHAR(50)
-├── started_at      TIMESTAMP
-├── finished_at     TIMESTAMP
-├── items_found     INTEGER
-├── items_new       INTEGER
-├── items_updated   INTEGER
-├── errors          TEXT
-├── status          VARCHAR(50)     -- running|success|error
-└── proxy_used      VARCHAR(500)
-```
-
-#### EnumString TypeDecorator
-
-Кросс-БД совместимость (SQLite + PostgreSQL):
-```python
-class EnumString(TypeDecorator):
-    """Хранит Python enum как строку. Работает в SQLite и PostgreSQL."""
-    impl = String
-    def process_bind_param(self, value, dialect):
-        return value.value if isinstance(value, enum.Enum) else value
-    def process_result_value(self, value, dialect):
-        return self._enum_class(value)  # → обратно в enum
-```
-
 ---
 
 ## 3. Потоки данных
 
-### 3.1 Основной pipeline (каждые 6 часов)
+### 3.1 Основной pipeline (каждые 6 часов, async-safe)
 
 ```
 [Cron/Trigger]
      │
      ▼
 ┌─────────────────────────────────────────────────────┐
-│            EnrichmentService.run_full_pipeline()     │
+│     EnrichmentService.run_full_pipeline()            │
+│     (все скрейперы через asyncio.to_thread)          │
 │                                                      │
-│  ┌─────────────────────────────────────────────┐    │
-│  │ Phase 1: Сбор данных (scraping)              │    │
-│  │                                               │    │
-│  │  torgi.gov.ru ──┐                             │    │
-│  │                  ├──→ UPSERT в PostgreSQL     │    │
-│  │  ГосПлан ───────┘    (source + source_id)    │    │
-│  └─────────────────────────────────────────────┘    │
-│                      │                               │
-│                      ▼                               │
-│  ┌─────────────────────────────────────────────┐    │
-│  │ Phase 2: Геокодирование                      │    │
-│  │                                               │    │
-│  │  SELECT WHERE is_geocoded = false             │    │
-│  │       │                                       │    │
-│  │       ▼                                       │    │
-│  │  Yandex Geocoder API                          │    │
-│  │  (address → lat, lon)                         │    │
-│  │       │                                       │    │
-│  │       ▼                                       │    │
-│  │  UPDATE is_geocoded = true                    │    │
-│  └─────────────────────────────────────────────┘    │
-│                      │                               │
-│                      ▼                               │
-│  ┌─────────────────────────────────────────────┐    │
-│  │ Phase 3: Рыночная оценка                     │    │
-│  │                                               │    │
-│  │  SELECT WHERE is_market_appraised = false     │    │
-│  │       │                                       │    │
-│  │       ▼                                       │    │
-│  │  CIAN API (поиск сопоставимых)                │    │
-│  │  (город + тип + площадь ±30%)                 │    │
-│  │       │                                       │    │
-│  │       ▼                                       │    │
-│  │  Усреднение price/м² → market_price           │    │
-│  │  discount_pct = (1 - auction/market) × 100    │    │
-│  │       │                                       │    │
-│  │       ▼                                       │    │
-│  │  UPDATE market_price, discount_pct            │    │
-│  └─────────────────────────────────────────────┘    │
+│  Phase 1: Сбор данных                                │
+│  torgi.gov.ru ──┐                                    │
+│  Fedresurs ─────┼──→ UPSERT в PostgreSQL             │
+│  ЭТП ───────────┘                                    │
 │                                                      │
-│  ┌─────────────────────────────────────────────┐    │
-│  │ Phase 4: Логирование                         │    │
-│  │                                               │    │
-│  │  ScrapeLog: source, items_found/new/updated,  │    │
-│  │             status, errors, proxy_used         │    │
-│  └─────────────────────────────────────────────┘    │
+│  Phase 2: Геокодирование (batch=200, async)          │
+│  Yandex Geocoder API → lat, lon                      │
+│                                                      │
+│  Phase 3: Рыночная оценка (batch=50, to_thread)      │
+│  CIAN → avg price/м² → market_price, discount_pct    │
 └─────────────────────────────────────────────────────┘
-```
-
-### 3.2 Запрос данных (пользователь)
-
-```
-[Браузер]
-     │
-     ▼
-GET /api/map-data?city=Москва&days=30
-     │
-     ▼
-┌─────────────────────────────────────────┐
-│ SQL: SELECT id, lat, lon, title, price, │
-│      market_price, discount_pct, ...    │
-│ FROM auction_properties                 │
-│ WHERE city ILIKE '%Москва%'             │
-│   AND latitude IS NOT NULL              │
-│   AND publish_date >= (today - 30d)     │
-│ ORDER BY publish_date DESC              │
-│ LIMIT 5000                              │
-└──────────────────┬──────────────────────┘
-                   │
-                   ▼
-┌─────────────────────────────────────────┐
-│ JSON Response → JS                       │
-│                                           │
-│ for each property:                        │
-│   color = getColorByDate(publish_date)    │
-│   marker = new ymaps.Placemark(           │
-│     [lat, lon], balloonContent, style     │
-│   )                                       │
-│   clusterer.add(marker)                   │
-│                                           │
-│ map.setBounds(clusterer.getBounds())      │
-└─────────────────────────────────────────┘
 ```
 
 ---
@@ -501,42 +409,9 @@ GET /api/map-data?city=Москва&days=30
 │  │ Health: pgready  │    │ depends_on: postgres      │ │
 │  └─────────────────┘    └──────────────────────────┘ │
 │                                                       │
-│  Volumes: pgdata (персистентное хранилище БД)         │
+│  Env vars: DB_*, YANDEX_MAPS_API_KEY, PROXY_LIST,    │
+│            ADMIN_API_KEY, CORS_ORIGINS, DEBUG          │
 └──────────────────────────────────────────────────────┘
-```
-
-### 4.2 Окружения
-
-| Окружение | БД | Прокси | API ключи | Запуск |
-|-----------|-----|--------|-----------|--------|
-| **Dev** | SQLite | Нет | Опционально | `uvicorn --reload` |
-| **Staging** | PostgreSQL | Тестовые | Все | `docker-compose` |
-| **Production** | PostgreSQL | Боевые | Все | `docker-compose` + Nginx |
-
-### 4.3 Production (Nginx)
-
-```
-                        ┌─────────────────────┐
-   Internet ────────────│    Nginx            │
-   (443/HTTPS)          │  ┌───────────────┐  │
-                        │  │ SSL (Let's    │  │
-                        │  │ Encrypt)      │  │
-                        │  └───────┬───────┘  │
-                        │          │          │
-                        │  ┌───────▼───────┐  │
-                        │  │ Rate Limiting │  │
-                        │  │ 10 req/s API  │  │
-                        │  │ 2 req/s scrape│  │
-                        │  └───────┬───────┘  │
-                        │          │          │
-                        │  ┌───────▼───────┐  │
-                        │  │ Static files  │──│──→ /static (CSS/JS)
-                        │  └───────┬───────┘  │
-                        │          │          │
-                        │  ┌───────▼───────┐  │
-                        │  │ Proxy pass    │──│──→ uvicorn :8000
-                        │  └───────────────┘  │
-                        └─────────────────────┘
 ```
 
 ---
@@ -546,83 +421,31 @@ GET /api/map-data?city=Москва&days=30
 | Угроза | Мера |
 |--------|------|
 | SQL-инъекции | SQLAlchemy ORM (параметризованные запросы) |
-| XSS | Jinja2 auto-escaping, CSP headers |
+| XSS | Jinja2 auto-escaping, X-XSS-Protection header |
 | CSRF | SameSite cookies, проверка Origin |
-| Rate limiting | Nginx limit_req |
-| Scraping detection | TLS fingerprint, proxy rotation, delays |
+| Rate limiting | In-memory RateLimiter (10 req/s API, 0.5 req/s scrape) |
+| Auth | API key для admin endpoints (secrets.compare_digest) |
+| Input validation | sort_by whitelist, enum validation |
+| Scraping detection | TLS fingerprint + Playwright + proxy rotation |
 | Data leak | Нет PII, публичные данные торгов |
-| API abuse | Rate limiting + pagination limits |
 
 ---
 
-## 6. Масштабирование
+## 6. Roadmap
 
-### 6.1 Горизонтальное
-
-```
-Phase 1 (текущий):
-  1 сервер, SQLite/PostgreSQL, монолит
-
-Phase 2 (10k+ объектов):
-  Docker Compose: PostgreSQL + Nginx + uvicorn (1 replica)
-
-Phase 3 (100k+ объектов, высокий трафик):
-  ├── PostgreSQL: репликация (read replica для API)
-  ├── uvicorn: 2-4 workers (gunicorn)
-  ├── Celery/RQ: отдельные воркеры для парсинга
-  ├── Redis: кэш для map-data (TTL 5 min)
-  └── CDN: статические файлы
-
-Phase 4 (1M+ объектов):
-  ├── PostgreSQL: партиционирование по city/region
-  ├── Elasticsearch: полнотекстовый поиск
-  ├── PostGIS: гео-запросы (вместо lat/lon фильтров)
-  └── Kubernetes: авто-масштабирование
-```
-
-### 6.2 Вертикальное
-
-| Метрика | Текущий лимит | Решение |
-|---------|-------------|---------|
-| Объектов в БД | ~100k (SQLite) | PostgreSQL |
-| Запросов/сек | ~50 (uvicorn) | gunicorn + workers |
-| Парсинг/день | ~1000 лотов | Прокси-пул, параллелизм |
-| Геокодирование | ~200/день (API лимит) | Кэш, batch processing |
-
----
-
-## 7. Roadmap
-
-### Phase 1: MVP (текущий) ✅
-- [x] Парсинг torgi.gov.ru + ГосПлан
-- [x] Рыночная оценка через ЦИАН
+### Phase 1: MVP ✅
+- [x] Парсинг torgi.gov.ru (verified API)
+- [x] Fedresurs scraper (bankruptcy auctions)
+- [x] CIAN market price estimation (curl_cffi + Playwright)
 - [x] Яндекс.Карта с цветовой маркировкой
-- [x] API для фильтрации и статистики
-- [x] SQLite fallback для разработки
-- [x] 73 теста
+- [x] Rate limiting + security headers
+- [x] Admin API key auth
+- [x] Async-safe pipeline
+- [x] 75 тестов
 
 ### Phase 2: Production Ready
-- [ ] Alembic миграции (production PostgreSQL)
 - [ ] Nginx reverse proxy + SSL
-- [ ] Celery для фоновых задач парсинга
+- [ ] Celery для фоновых задач
 - [ ] Redis кэш для map-data
-- [ ] Email-уведомления о новых лотах со скидкой > 20%
-- [ ] Пагинация на фронтенде
-- [ ] Сохранённые фильтры (localStorage)
-
-### Phase 3: Расширенный функционал
-- [ ] Авторизация (JWT)
-- [ ] Избранные объекты
-- [ ] Графики изменения цен
-- [ ] PostGIS для гео-запросов
-- [ ] Полный текстовый поиск (Elasticsearch)
-- [ ] Telegram-бот для уведомлений
-- [ ] Экспорт в Excel/CSV
-
-### Phase 4: Масштабирование
-- [ ] Kubernetes deployment
-- [ ] Read replicas PostgreSQL
-- [ ] CDN для статики
-- [ ] Rate limiting per user (JWT)
-- [ ] A/B тестирование UI
-- [ ] Мобильное приложение (React Native)
+- [ ] JWT авторизация
+- [ ] Email/Telegram уведомления
