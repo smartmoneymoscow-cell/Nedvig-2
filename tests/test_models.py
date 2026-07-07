@@ -1,7 +1,5 @@
 """Tests for database models."""
 
-import pytest
-from datetime import datetime, date
 
 from models import (
     AuctionProperty, ScrapeLog, SourceType, AuctionStatus, PropertyType,

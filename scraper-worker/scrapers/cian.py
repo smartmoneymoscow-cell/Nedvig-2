@@ -15,7 +15,6 @@ import re
 import json
 import time
 import random
-from datetime import datetime
 from typing import Optional
 from urllib.parse import urlencode
 
@@ -23,7 +22,6 @@ from bs4 import BeautifulSoup
 from loguru import logger
 
 from .base import BaseScraper
-from .proxy_manager import proxy_manager
 from models import PropertyType
 
 

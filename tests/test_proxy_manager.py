@@ -1,6 +1,5 @@
 """Tests for proxy manager."""
 
-import pytest
 from unittest.mock import patch
 
 from scrapers.proxy_manager import ProxyManager

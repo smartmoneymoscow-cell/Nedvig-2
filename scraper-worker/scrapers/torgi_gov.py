@@ -15,17 +15,12 @@ Verified parameters from reverse-engineering and public Scrapy spiders:
 """
 
 import re
-import json
-import time
-import hashlib
-from datetime import datetime, date, timedelta
+from datetime import datetime
 from typing import Optional
 
-from bs4 import BeautifulSoup
 from loguru import logger
 
 from .base import BaseScraper
-from .proxy_manager import proxy_manager
 from models import SourceType, AuctionStatus, PropertyType
 
 

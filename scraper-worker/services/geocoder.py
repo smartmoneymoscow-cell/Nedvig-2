@@ -1,6 +1,5 @@
 """Yandex Geocoder service."""
 
-import time
 from typing import Optional
 import httpx
 from loguru import logger

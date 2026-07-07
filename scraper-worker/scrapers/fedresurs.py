@@ -13,8 +13,7 @@ Note: This replaces the previous GosPlanScraper which targeted the wrong source.
 import re
 import json
 import hashlib
-import asyncio
-from datetime import datetime, date, timedelta
+from datetime import datetime
 from typing import Optional
 
 from loguru import logger

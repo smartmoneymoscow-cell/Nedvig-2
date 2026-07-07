@@ -11,9 +11,7 @@ This scraper is supplementary — it catches lots that may not yet be in torgi.g
 """
 
 import re
-import json
 import hashlib
-from datetime import datetime, date
 from typing import Optional
 
 from bs4 import BeautifulSoup

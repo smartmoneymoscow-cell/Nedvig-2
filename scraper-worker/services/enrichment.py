@@ -191,7 +191,7 @@ class EnrichmentService:
     async def _geocode_properties(self, session: AsyncSession, batch_size: int = 200):
         result = await session.execute(
             select(AuctionProperty)
-            .where(AuctionProperty.is_geocoded == False, AuctionProperty.address.isnot(None), AuctionProperty.address != "")
+            .where(AuctionProperty.is_geocoded.is_(False), AuctionProperty.address.isnot(None), AuctionProperty.address != "")
             .limit(batch_size)
         )
         properties = result.scalars().all()
@@ -221,7 +221,7 @@ class EnrichmentService:
         result = await session.execute(
             select(AuctionProperty)
             .where(
-                AuctionProperty.is_market_appraised == False,
+                AuctionProperty.is_market_appraised.is_(False),
                 AuctionProperty.total_area.isnot(None),
                 AuctionProperty.start_price.isnot(None),
             )

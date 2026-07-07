@@ -97,7 +97,7 @@ class TestTorgiGovScraper:
             "characteristics": [],
         }
         # Note: "двушка" is not in the current patterns, but "двухкомнатн" is
-        result = self.scraper._parse_lot_card(card)
+        self.scraper._parse_lot_card(card)
         # rooms will be None since "двушка" is not matched
         # This is expected — we only match formal patterns
 

@@ -1,8 +1,6 @@
 """Tests for base scraper utilities."""
 
-import pytest
 from datetime import datetime, date
-from unittest.mock import patch
 
 from scrapers.base_scraper import BaseScraper
 

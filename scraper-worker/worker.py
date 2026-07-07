@@ -24,7 +24,7 @@ async def lifespan(app: FastAPI):
 
     # Start periodic scraping
     if settings.SCRAPE_INTERVAL_HOURS > 0:
-        task = asyncio.create_task(_periodic_scrape())
+        asyncio.create_task(_periodic_scrape())
         logger.info(f"Periodic scraping every {settings.SCRAPE_INTERVAL_HOURS}h")
 
     yield

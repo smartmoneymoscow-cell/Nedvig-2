@@ -4,7 +4,7 @@ from datetime import datetime, date
 from typing import Optional
 
 from sqlalchemy import (
-    Column, Integer, String, Float, DateTime, Date, Text, Boolean,
+    Integer, String, Float, DateTime, Date, Text, Boolean,
     Index, JSON, TypeDecorator
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column

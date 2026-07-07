@@ -248,15 +248,15 @@ async def get_scrape_logs(
 
     return [
         {
-            "id": l.id,
-            "source": _val(l.source),
-            "started_at": l.started_at.isoformat() if l.started_at else None,
-            "finished_at": l.finished_at.isoformat() if l.finished_at else None,
-            "items_found": l.items_found,
-            "items_new": l.items_new,
-            "items_updated": l.items_updated,
-            "status": l.status,
-            "errors": l.errors,
+            "id": log_entry.id,
+            "source": _val(log_entry.source),
+            "started_at": log_entry.started_at.isoformat() if log_entry.started_at else None,
+            "finished_at": log_entry.finished_at.isoformat() if log_entry.finished_at else None,
+            "items_found": log_entry.items_found,
+            "items_new": log_entry.items_new,
+            "items_updated": log_entry.items_updated,
+            "status": log_entry.status,
+            "errors": log_entry.errors,
         }
-        for l in logs
+        for log_entry in logs
     ]

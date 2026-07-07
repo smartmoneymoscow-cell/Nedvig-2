@@ -87,7 +87,7 @@ async def refresh(body: RefreshRequest, db: AsyncSession = Depends(get_session))
         raise HTTPException(status_code=401, detail="Invalid refresh token")
 
     user_id = payload.get("sub")
-    result = await db.execute(select(User).where(User.id == int(user_id), User.is_active == True))
+    result = await db.execute(select(User).where(User.id == int(user_id), User.is_active))
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
@@ -101,6 +101,5 @@ async def refresh(body: RefreshRequest, db: AsyncSession = Depends(get_session))
 @router.get("/me", response_model=UserResponse)
 async def me(db: AsyncSession = Depends(get_session)):
     """Get current user from token (simplified — checks Authorization header)."""
-    from fastapi import Request
     # This is a simplified version; production should use middleware
     raise HTTPException(status_code=501, detail="Use /api/auth/login to get tokens")

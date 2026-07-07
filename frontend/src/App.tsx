@@ -15,7 +15,7 @@ export default function App() {
 
   const { data: points = [], isLoading, error } = useQuery({
     queryKey: ['mapData', filters],
-    queryFn: () => fetchMapData(filters),
+    queryFn: () => fetchMapData(filters as Record<string, string | number | undefined>),
     retry: 2,
     staleTime: 5 * 60 * 1000, // 5 min cache
   })

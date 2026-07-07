@@ -29,10 +29,8 @@ def verify_admin_key(request: Request):
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
         token = auth_header[7:]
-    elif api_key:
-        token = api_key
     else:
-        raise HTTPException(status_code=401, detail="API key required")
+        raise HTTPException(status_code=401, detail="API key required (use Authorization: Bearer <key>)")
     if not secrets.compare_digest(token, _admin_api_key):
         raise HTTPException(status_code=403, detail="Invalid API key")
     return True

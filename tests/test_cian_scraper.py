@@ -1,7 +1,5 @@
 """Tests for CIAN scraper."""
 
-import pytest
-from unittest.mock import patch
 
 from scrapers.cian_scraper import CianScraper
 from models import PropertyType

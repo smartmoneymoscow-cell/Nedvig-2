@@ -10,7 +10,6 @@ os.environ["USE_SQLITE"] = "true"
 
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from models import Base
-from database import get_session
 
 
 TEST_DB_URL = "sqlite+aiosqlite:///./test.db"
