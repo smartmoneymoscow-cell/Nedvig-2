@@ -45,3 +45,6 @@ docker-compose.override.yml
 .coverage
 htmlcov/
 test.db
+*.db
+*.db-shm
+*.db-wal

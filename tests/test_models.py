@@ -15,13 +15,15 @@ class TestEnumString:
     def test_bind_source_type(self):
         es = EnumString(SourceType, length=50)
         assert es.process_bind_param(SourceType.TORGIGOV, None) == "torgi_gov"
-        assert es.process_bind_param(SourceType.GOSPLAN, None) == "gosplan"
+        assert es.process_bind_param(SourceType.FEDRESURS, None) == "fedresurs"
+        assert es.process_bind_param(SourceType.ETP, None) == "etp"
         assert es.process_bind_param(None, None) is None
 
     def test_result_source_type(self):
         es = EnumString(SourceType, length=50)
         assert es.process_result_value("torgi_gov", None) == SourceType.TORGIGOV
-        assert es.process_result_value("gosplan", None) == SourceType.GOSPLAN
+        assert es.process_result_value("fedresurs", None) == SourceType.FEDRESURS
+        assert es.process_result_value("etp", None) == SourceType.ETP
         assert es.process_result_value(None, None) is None
 
     def test_bind_property_type(self):
@@ -74,13 +76,13 @@ class TestAuctionPropertyModel:
 
     def test_enum_values_stored_as_strings(self):
         prop = AuctionProperty(
-            source=SourceType.GOSPLAN,
-            source_id="gp-1",
+            source=SourceType.FEDRESURS,
+            source_id="fr-1",
             property_type=PropertyType.HOUSE,
             auction_status=AuctionStatus.UPCOMING,
         )
         # source should be the enum instance (SQLAlchemy handles conversion)
-        assert prop.source in (SourceType.GOSPLAN, "gosplan")
+        assert prop.source in (SourceType.FEDRESURS, "fedresurs")
         assert prop.property_type in (PropertyType.HOUSE, "house")
 
 

@@ -300,6 +300,8 @@ class TorgiGovScraper(BaseScraper):
 
         address = title  # lotName typically contains the full address
         region_code = card.get("subjectRFCode", "")
+        # FIX: extract city from API response instead of leaving as None
+        city = card.get("cityName") or card.get("regionName")
 
         organizer = None
         for attr in card.get("noticeAttributes", []):
@@ -316,7 +318,7 @@ class TorgiGovScraper(BaseScraper):
             "property_type": self._detect_property_type(card),
             "address": address,
             "region": region_code,
-            "city": None,  # Needs geocoding
+            "city": city,  # Extracted from API response
             "latitude": None,
             "longitude": None,
             "total_area": total_area,
@@ -386,6 +388,12 @@ class TorgiGovScraper(BaseScraper):
                     "sort": "firstVersionPublicationDate,desc",
                     "page": str(page),
                 }
+
+                # FIX: filter by days_back
+                if days_back:
+                    from datetime import timedelta
+                    date_from = (datetime.now() - timedelta(days=days_back)).strftime("%Y-%m-%d")
+                    params["publishDateFrom"] = date_from
 
                 if region_code:
                     params["dynSubjRF"] = region_code

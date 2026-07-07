@@ -9,7 +9,6 @@ from models import Base
 
 
 def _get_engine_kwargs(is_sqlite: bool = False) -> dict:
-    """Get engine kwargs based on database type."""
     if is_sqlite:
         return {"echo": False}
     return {
@@ -20,13 +19,11 @@ def _get_engine_kwargs(is_sqlite: bool = False) -> dict:
     }
 
 
-# Async engine
 is_sqlite = settings.USE_SQLITE
-db_url = settings.EFFECTIVE_DB_URL
+db_url = settings.effective_db_url
 
 async_engine = create_async_engine(db_url, **_get_engine_kwargs(is_sqlite))
 
-# Enable WAL mode for SQLite (better concurrent reads)
 if is_sqlite:
     @event.listens_for(async_engine.sync_engine, "connect")
     def set_sqlite_pragma(dbapi_connection, connection_record):
@@ -41,20 +38,16 @@ async_session_factory = async_sessionmaker(
     expire_on_commit=False,
 )
 
-# Sync engine for Alembic and scraping
-sync_engine = create_engine(settings.EFFECTIVE_DB_URL_SYNC, echo=False)
-
+sync_engine = create_engine(settings.effective_db_url_sync, echo=False)
 SyncSession = sessionmaker(bind=sync_engine)
 
 
 async def init_db():
-    """Create all tables."""
     async with async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
 
 async def get_session() -> AsyncSession:
-    """Get async database session."""
     async with async_session_factory() as session:
         try:
             yield session

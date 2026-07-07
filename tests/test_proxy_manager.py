@@ -13,12 +13,13 @@ class TestProxyManager:
         """Should work without proxies configured."""
         with patch("scrapers.proxy_manager.settings") as mock_settings:
             mock_settings.PROXY_LIST = ""
-            pm = ProxyManager()
-            assert pm.proxy_count == 0
+            with patch.object(ProxyManager, '_bootstrap_proxies'):
+                pm = ProxyManager()
+                assert pm.proxy_count == 0
             assert pm.get_proxy() is None
             assert pm.get_httpx_proxy() is None
             assert pm.get_requests_proxy() is None
-            assert pm.get_selenium_proxy() is None
+            assert pm.get_random_proxy() is None
 
     def test_load_proxies(self):
         """Should load proxies from config."""
