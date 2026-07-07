@@ -61,3 +61,4 @@ body {
 .detail-scroll::-webkit-scrollbar { width: 6px; }
 .detail-scroll::-webkit-scrollbar-track { background: transparent; }
 .detail-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
