@@ -48,3 +48,5 @@ test.db
 *.db
 *.db-shm
 *.db-wal
+dist/
+assets/
