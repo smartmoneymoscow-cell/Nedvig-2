@@ -20,7 +20,7 @@ class Settings(BaseSettings):
 
     # Security
     ADMIN_API_KEY: str = ""
-    JWT_SECRET: str = "change-me-in-production"
+    JWT_SECRET: str = ""  # REQUIRED in production — empty = startup warning
     JWT_ALGORITHM: str = "HS256"
     JWT_ACCESS_EXPIRE_MINUTES: int = 15
     JWT_REFRESH_EXPIRE_DAYS: int = 7

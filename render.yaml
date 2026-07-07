@@ -42,3 +42,5 @@ databases:
   - name: nedvig-db
     plan: free
     databaseName: estate_auction
+    # NOTE: Free tier deletes data after 90 days.
+    # For production, use external DB (Neon, Supabase) or upgrade plan.

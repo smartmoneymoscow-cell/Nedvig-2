@@ -132,11 +132,34 @@ class EnrichmentService:
             log_entry.finished_at = datetime.utcnow()
             await session.flush()
 
+    def _validate_listing(self, data: dict) -> bool:
+        """Validate listing data before insert. Returns True if valid."""
+        # Must have source and source_id
+        if not data.get("source") or not data.get("source_id"):
+            return False
+        # Reject obviously bad data
+        price = data.get("start_price") or data.get("current_price")
+        if price is not None and price <= 0:
+            return False
+        area = data.get("total_area")
+        if area is not None and area <= 0:
+            return False
+        # Reject (0,0) coordinates
+        lat, lon = data.get("latitude"), data.get("longitude")
+        if lat is not None and lon is not None:
+            if lat == 0 and lon == 0:
+                data["latitude"] = None
+                data["longitude"] = None
+        return True
+
     async def _upsert_listings(self, session: AsyncSession, listings: list[dict]) -> tuple[int, int]:
         new_count = 0
         update_count = 0
 
         for listing_data in listings:
+            if not self._validate_listing(listing_data):
+                logger.debug(f"Skipping invalid listing: {listing_data.get('source_id', '?')}")
+                continue
             existing = await session.execute(
                 select(AuctionProperty).where(
                     AuctionProperty.source == listing_data["source"],

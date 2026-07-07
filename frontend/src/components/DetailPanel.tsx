@@ -17,7 +17,7 @@ export default function DetailPanel({ point, onClose }: Props) {
   const [statusText, statusClass] = STATUS_LABELS[p.status] || ['—', '']
 
   return (
-    <div className="absolute right-0 top-0 bottom-0 w-[400px] bg-white dark:bg-gray-900 border-l border-gray-200 dark:border-gray-700 z-50 shadow-xl overflow-y-auto detail-scroll animate-slide-in">
+    <div className="absolute right-0 top-0 bottom-0 w-full md:w-[400px] bg-white dark:bg-gray-900 border-l border-gray-200 dark:border-gray-700 z-50 shadow-xl overflow-y-auto detail-scroll animate-slide-in">
       {/* Close */}
       <button onClick={onClose} className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors z-10">
         <X size={20} />

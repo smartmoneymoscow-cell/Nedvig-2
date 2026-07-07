@@ -23,9 +23,10 @@ _admin_api_key = settings.ADMIN_API_KEY
 
 def verify_admin_key(request: Request):
     if not _admin_api_key:
-        return True
+        if not settings.DEBUG:
+            raise HTTPException(status_code=500, detail="ADMIN_API_KEY not configured")
+        return True  # Dev mode only
     auth_header = request.headers.get("Authorization", "")
-    api_key = request.query_params.get("api_key", "")
     if auth_header.startswith("Bearer "):
         token = auth_header[7:]
     elif api_key:
@@ -39,6 +40,15 @@ def verify_admin_key(request: Request):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Security checks
+    if not settings.DEBUG:
+        if not settings.JWT_SECRET:
+            log.error("❌ JWT_SECRET not set in production mode!")
+        if not settings.ADMIN_API_KEY:
+            log.error("❌ ADMIN_API_KEY not set in production mode!")
+        if "*" in settings.CORS_ORIGINS:
+            log.warning("⚠️  CORS_ORIGINS=* in production — restrict to your domain")
+
     log.info("Initializing database...")
     await init_db()
     log.info("✅ Database initialized")

@@ -28,14 +28,17 @@ PROXY_SOURCES = [
     "https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/socks5.txt",
 ]
 
-# Test URL for proxy validation
-TEST_URL = "https://torgi.gov.ru/new/api/public/lotcards/search"
-TEST_PARAMS = {
-    "lotStatus": "PUBLISHED",
-    "byFirstVersion": "true",
-    "size": "1",
-    "sort": "firstVersionPublicationDate,desc",
-}
+# Test URLs for proxy validation (multiple targets for reliability)
+TEST_URLS = [
+    ("https://torgi.gov.ru/new/api/public/lotcards/search", {
+        "lotStatus": "PUBLISHED",
+        "byFirstVersion": "true",
+        "size": "1",
+        "sort": "firstVersionPublicationDate,desc",
+    }),
+    ("https://httpbin.org/ip", {}),
+    ("https://api.ipify.org?format=json", {}),
+]
 
 # Known Russian IP ranges (first octets commonly used in RU)
 RU_IP_PREFIXES = [
@@ -82,13 +85,9 @@ class ProxyManager:
 
     def _bootstrap_proxies(self):
         """Seed with known working proxies for immediate use."""
-        # These are tested and confirmed working with torgi.gov.ru
-        known_good = [
-            "socks5://194.28.162.12:1080",
-        ]
-        self._configured_proxies = known_good
-        self._healthy_proxies = list(known_good)
-        logger.info(f"[ProxyManager] Bootstrapped with {len(known_good)} known proxies")
+        # Trigger async discovery instead of hardcoded proxies
+        logger.info("[ProxyManager] No configured proxies, will auto-discover")
+        self._last_discovery = 0  # Trigger discovery on first get_proxy()
 
     def _discover_proxies(self):
         """Fetch fresh SOCKS5 proxies from public sources."""
@@ -128,20 +127,23 @@ class ProxyManager:
             logger.warning("[ProxyManager] No proxies discovered")
 
     def _test_proxy(self, proxy: str) -> bool:
-        """Test if a proxy can reach the target API."""
-        try:
-            from curl_cffi import requests as curl_requests
-            r = curl_requests.get(
-                TEST_URL,
-                params=TEST_PARAMS,
-                timeout=self._test_timeout,
-                proxies={"http": proxy, "https": proxy},
-                impersonate="chrome120",
-                verify=False,
-            )
-            return r.status_code == 200
-        except Exception:
-            return False
+        """Test if a proxy can reach any of the target URLs."""
+        for test_url, test_params in TEST_URLS:
+            try:
+                from curl_cffi import requests as curl_requests
+                r = curl_requests.get(
+                    test_url,
+                    params=test_params,
+                    timeout=self._test_timeout,
+                    proxies={"http": proxy, "https": proxy},
+                    impersonate="chrome120",
+                    verify=False,
+                )
+                if r.status_code == 200:
+                    return True
+            except Exception:
+                continue
+        return False
 
     def _health_check_proxies(self):
         """Test all known proxies and keep only working ones."""
@@ -187,6 +189,8 @@ class ProxyManager:
                     self._healthy_proxies = list(self._discovered_proxies[:10])
 
             if not self._healthy_proxies:
+                # Fallback: direct connection (no proxy)
+                logger.debug("[ProxyManager] No healthy proxies, using direct connection")
                 return None
 
             proxy = self._healthy_proxies[self._current_index % len(self._healthy_proxies)]

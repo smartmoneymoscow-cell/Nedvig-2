@@ -6,15 +6,10 @@ Can also be triggered via HTTP webhook from the API service.
 
 import asyncio
 import time
-import os
-import sys
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from loguru import logger
-
-# Add parent to path for shared models
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from config import settings
 from database import init_db, async_session_factory
@@ -44,10 +39,24 @@ async def _periodic_scrape():
     while True:
         try:
             logger.info("⏰ Starting scheduled scrape...")
-            await _run_pipeline()
+            await _run_pipeline_with_retry()
         except Exception as e:
-            logger.error(f"Scheduled scrape failed: {e}")
+            logger.error(f"Scheduled scrape failed after retries: {e}")
         await asyncio.sleep(settings.SCRAPE_INTERVAL_HOURS * 3600)
+
+
+async def _run_pipeline_with_retry(max_retries: int = 3):
+    """Run pipeline with exponential backoff retry."""
+    for attempt in range(1, max_retries + 1):
+        try:
+            await _run_pipeline()
+            return
+        except Exception as e:
+            if attempt == max_retries:
+                raise
+            wait = min(60 * attempt, 300)  # 1min, 2min, 5min max
+            logger.warning(f"Pipeline attempt {attempt}/{max_retries} failed: {e}. Retrying in {wait}s...")
+            await asyncio.sleep(wait)
 
 
 async def _run_pipeline():
@@ -67,7 +76,7 @@ async def _run_pipeline():
 @app.post("/internal/scrape")
 async def trigger_scrape():
     """Manual trigger from API service."""
-    asyncio.create_task(_run_pipeline())
+    asyncio.create_task(_run_pipeline_with_retry())
     return {"status": "started", "message": "Scrape task started"}
 
 

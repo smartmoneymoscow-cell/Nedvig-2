@@ -12,6 +12,13 @@ COPY alembic.ini .
 COPY alembic/ alembic/
 COPY . .
 
+# Pre-start script for safe migrations
+COPY prestart.sh /prestart.sh
+RUN chmod +x /prestart.sh
+
 EXPOSE 8000
 
-CMD ["sh", "-c", "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8000"]
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+CMD ["/prestart.sh"]

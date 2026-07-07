@@ -2,10 +2,25 @@ import type { MapPoint, PaginatedResponse, Stats, Filters } from '../types'
 
 const API_BASE = import.meta.env.VITE_API_URL || ''
 
+export class ApiError extends Error {
+  constructor(public status: number, message: string) {
+    super(message)
+    this.name = 'ApiError'
+  }
+}
+
 async function fetchJSON<T>(url: string): Promise<T> {
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  return res.json()
+  try {
+    const res = await fetch(url)
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      throw new ApiError(res.status, `HTTP ${res.status}: ${body || res.statusText}`)
+    }
+    return res.json()
+  } catch (err) {
+    if (err instanceof ApiError) throw err
+    throw new ApiError(0, `Network error: ${err instanceof Error ? err.message : String(err)}`)
+  }
 }
 
 export async function fetchMapData(params: Record<string, string | number | undefined> = {}): Promise<MapPoint[]> {
@@ -29,6 +44,12 @@ export async function fetchStats(): Promise<Stats> {
 }
 
 export async function triggerScrape(): Promise<{ status: string }> {
-  const res = await fetch(`${API_BASE}/api/scrape/trigger`, { method: 'POST' })
-  return res.json()
+  try {
+    const res = await fetch(`${API_BASE}/api/scrape/trigger`, { method: 'POST' })
+    if (!res.ok) throw new ApiError(res.status, `HTTP ${res.status}`)
+    return res.json()
+  } catch (err) {
+    if (err instanceof ApiError) throw err
+    throw new ApiError(0, `Network error: ${err instanceof Error ? err.message : String(err)}`)
+  }
 }

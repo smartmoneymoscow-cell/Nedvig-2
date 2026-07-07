@@ -45,7 +45,7 @@ class BaseScraper(ABC):
 
     def _create_session(self):
         if HAS_CURL_CFFI:
-            session = curl_requests.Session(impersonate="chrome120", verify=True)
+            session = curl_requests.Session(impersonate="chrome120", verify=True)  # SSL verification ON
             session.headers.update(self._get_headers())
             proxy = self._get_proxy()
             if proxy:

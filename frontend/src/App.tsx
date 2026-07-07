@@ -13,14 +13,18 @@ export default function App() {
   const [selected, setSelected] = useState<MapPoint | null>(null)
   const [dark, setDark] = useState(false)
 
-  const { data: points = [], isLoading } = useQuery({
+  const { data: points = [], isLoading, error } = useQuery({
     queryKey: ['mapData', filters],
     queryFn: () => fetchMapData(filters),
+    retry: 2,
+    staleTime: 5 * 60 * 1000, // 5 min cache
   })
 
   const { data: stats } = useQuery({
     queryKey: ['stats'],
     queryFn: fetchStats,
+    retry: 2,
+    staleTime: 5 * 60 * 1000,
   })
 
   const handleScrape = useCallback(async () => {
@@ -34,7 +38,22 @@ export default function App() {
       <div className="flex flex-1 overflow-hidden">
         <Sidebar filters={filters} onChange={setFilters} stats={stats} />
         <div className="flex-1 relative">
-          <MapView points={points} loading={isLoading} onSelect={setSelected} />
+          {error ? (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="bg-white dark:bg-gray-800 px-8 py-6 rounded-lg shadow-lg text-center max-w-md">
+                <div className="text-4xl mb-3">⚠️</div>
+                <div className="font-semibold text-lg mb-2">Ошибка загрузки</div>
+                <div className="text-sm text-gray-500 mb-4">
+                  {error instanceof Error ? error.message : 'Не удалось получить данные с сервера'}
+                </div>
+                <div className="text-xs text-gray-400">
+                  API: {import.meta.env.VITE_API_URL || '(локальный)'}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <MapView points={points} loading={isLoading} onSelect={setSelected} />
+          )}
           {selected && <DetailPanel point={selected} onClose={() => setSelected(null)} />}
         </div>
       </div>

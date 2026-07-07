@@ -119,18 +119,26 @@ export default function MapView({ points, loading, onSelect }: Props) {
       {loading && (
         <div className="absolute inset-0 bg-white/80 dark:bg-gray-900/80 flex items-center justify-center z-[1000]">
           <div className="flex flex-col items-center gap-3">
-            <div className="w-10 h-10 border-3 border-gray-200 border-t-red-500 rounded-full animate-spin" />
+            <div className="w-10 h-10 border-[3px] border-gray-200 border-t-red-500 rounded-full animate-spin" />
             <span className="text-sm text-gray-500">Загрузка данных...</span>
           </div>
         </div>
       )}
       {!loading && points.length === 0 && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="bg-white/90 dark:bg-gray-800/90 px-8 py-6 rounded-lg shadow-lg text-center max-w-sm">
+          <div className="bg-white/90 dark:bg-gray-800/90 px-8 py-6 rounded-lg shadow-lg text-center max-w-sm mx-4">
             <div className="text-4xl mb-3">🏠</div>
             <div className="font-semibold text-lg mb-1">Нет объектов</div>
             <div className="text-sm text-gray-500">Попробуйте изменить фильтры или обновить данные</div>
+            <div className="text-xs text-gray-400 mt-3">
+              Нажмите «Обновить» в верхней панели для запуска скрейперов
+            </div>
           </div>
+        </div>
+      )}
+      {!loading && points.length > 0 && (
+        <div className="absolute bottom-4 left-4 z-[1000] bg-white/90 dark:bg-gray-800/90 px-3 py-1.5 rounded shadow text-xs text-gray-500">
+          {points.length} объектов на карте
         </div>
       )}
     </div>

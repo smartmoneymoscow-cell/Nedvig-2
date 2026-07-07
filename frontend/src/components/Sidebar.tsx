@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Filter, X } from 'lucide-react'
 import type { Filters, Stats } from '../types'
 
 interface Props {
@@ -9,8 +10,12 @@ interface Props {
 
 export default function Sidebar({ filters, onChange, stats }: Props) {
   const [local, setLocal] = useState<Filters>(filters)
+  const [mobileOpen, setMobileOpen] = useState(false)
 
-  const apply = () => onChange({ ...local })
+  const apply = () => {
+    onChange({ ...local })
+    setMobileOpen(false)
+  }
   const reset = () => {
     const cleared: Filters = { days: 90 }
     setLocal(cleared)
@@ -19,8 +24,8 @@ export default function Sidebar({ filters, onChange, stats }: Props) {
 
   const set = (k: keyof Filters, v: string | number | undefined) => setLocal(prev => ({ ...prev, [k]: v }))
 
-  return (
-    <aside className="w-72 border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 overflow-y-auto shrink-0 p-5 flex flex-col gap-6">
+  const sidebarContent = (
+    <>
       <div>
         <h3 className="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-3 pb-2 border-b-2 border-gray-900 dark:border-white">Фильтры</h3>
 
@@ -114,7 +119,37 @@ export default function Sidebar({ filters, onChange, stats }: Props) {
           </div>
         </div>
       )}
-    </aside>
+    </>
+  )
+
+  return (
+    <>
+      {/* Mobile filter toggle button */}
+      <button
+        onClick={() => setMobileOpen(true)}
+        className="md:hidden fixed bottom-4 right-4 z-[1001] bg-gray-900 dark:bg-white text-white dark:text-gray-900 p-3 rounded-full shadow-lg"
+      >
+        <Filter size={20} />
+      </button>
+
+      {/* Mobile overlay */}
+      {mobileOpen && (
+        <div className="md:hidden fixed inset-0 z-[1002] bg-black/50" onClick={() => setMobileOpen(false)} />
+      )}
+
+      {/* Sidebar — desktop: always visible, mobile: slide-in drawer */}
+      <aside className={`
+        md:w-72 md:shrink-0 md:relative md:translate-x-0
+        ${mobileOpen ? 'fixed inset-y-0 left-0 z-[1003] translate-x-0' : 'fixed -translate-x-full md:translate-x-0'}
+        w-80 border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 overflow-y-auto p-5 flex flex-col gap-6 transition-transform
+      `}>
+        {/* Mobile close button */}
+        <button onClick={() => setMobileOpen(false)} className="md:hidden absolute top-4 right-4 p-1 text-gray-400">
+          <X size={18} />
+        </button>
+        {sidebarContent}
+      </aside>
+    </>
   )
 }
 
