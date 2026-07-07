@@ -21,7 +21,7 @@ jobs:
         run: |
           pip install -r api/requirements.txt
           pip install -r scraper-worker/requirements.txt
-          pip install pytest pytest-asyncio httpx aiosqlite
+          pip install pytest pytest-asyncio httpx aiosqlite pydantic[email]
 
       - name: Run API tests
         env:

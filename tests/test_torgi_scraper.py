@@ -139,7 +139,7 @@ class TestTorgiGovScraper:
         assert "301" in REAL_ESTATE_CATEGORIES  # Земли населенных пунктов
         assert len(REAL_ESTATE_CATEGORIES) >= 8
 
-    @patch("scrapers.torgi_scraper.TorgiGovScraper._create_session")
+    @patch("scrapers.torgi_gov.TorgiGovScraper._create_session")
     def test_scrape_listings_empty_response(self, mock_create_session):
         """Test handling of empty API response."""
         mock_session = MagicMock()
@@ -152,7 +152,7 @@ class TestTorgiGovScraper:
         results = self.scraper.scrape_listings()
         assert results == []
 
-    @patch("scrapers.torgi_scraper.TorgiGovScraper._create_session")
+    @patch("scrapers.torgi_gov.TorgiGovScraper._create_session")
     def test_scrape_listings_api_error(self, mock_create_session):
         """Test handling of API error."""
         mock_session = MagicMock()

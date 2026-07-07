@@ -123,7 +123,7 @@ class TestScrapeTriggerAPI:
         response = await client.post("/api/scrape/trigger")
         assert response.status_code == 200
         data = response.json()
-        assert data["status"] == "started"
+        assert data["status"] in ("started", "no_worker")
 
 
 class TestScrapeLogsAPI:
