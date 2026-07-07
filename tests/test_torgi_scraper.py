@@ -2,7 +2,7 @@
 
 import pytest
 from unittest.mock import MagicMock, patch
-from scrapers.torgi_scraper import TorgiGovScraper, STATUS_MAP, REAL_ESTATE_CATEGORIES
+from scrapers.torgi_gov import TorgiGovScraper, STATUS_MAP, REAL_ESTATE_CATEGORIES
 from models import AuctionStatus, PropertyType
 
 

@@ -1,7 +1,7 @@
 """Tests for CIAN scraper."""
 
 
-from scrapers.cian_scraper import CianScraper
+from scrapers.cian import CianScraper
 from models import PropertyType
 
 

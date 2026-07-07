@@ -2,7 +2,7 @@
 
 from datetime import datetime, date
 
-from scrapers.base_scraper import BaseScraper
+from scrapers.base import BaseScraper
 
 
 # Concrete implementation for testing
