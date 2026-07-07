@@ -6,15 +6,10 @@ Can also be triggered via HTTP webhook from the API service.
 
 import asyncio
 import time
-import os
-import sys
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from loguru import logger
-
-# Add parent to path for shared models
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from config import settings
 from database import init_db, async_session_factory

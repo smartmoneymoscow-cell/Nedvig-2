@@ -1,4 +1,4 @@
-"""Fix enum values — add fedresurs and etp
+"""No-op — enum fix not needed (models use String columns via EnumString).
 
 Revision ID: 002
 Revises: 001
@@ -14,24 +14,10 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Add new enum values for source type
-    # PostgreSQL doesn't support IF NOT EXISTS for enum values directly,
-    # so we use a DO block
-    op.execute("""
-        DO $$
-        BEGIN
-            IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'fedresurs' AND enumtypid = 'sourcetype'::regtype) THEN
-                ALTER TYPE sourcetype ADD VALUE 'fedresurs';
-            END IF;
-            IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'etp' AND enumtypid = 'sourcetype'::regtype) THEN
-                ALTER TYPE sourcetype ADD VALUE 'etp';
-            END IF;
-            IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'cian' AND enumtypid = 'sourcetype'::regtype) THEN
-                ALTER TYPE sourcetype ADD VALUE 'cian';
-            END IF;
-        END$$;
-    """)
+    # No-op: models use EnumString (VARCHAR columns), not PG native enums.
+    # Migration 001 already creates String columns for source/status/type.
+    pass
 
 
 def downgrade() -> None:
-    pass  # Cannot remove enum values in PostgreSQL
+    pass

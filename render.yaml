@@ -1,5 +1,5 @@
 services:
-  # API Service
+  # ─── API Service ───────────────────────────────────────────
   - type: web
     name: nedvig-api
     runtime: docker
@@ -16,11 +16,14 @@ services:
         generateValue: true
       - key: CORS_ORIGINS
         value: "https://smartmoneymoscow-cell.github.io"
+      - key: SCRAPER_WORKER_URL
+        value: "http://nedvig-scraper:8001"
       - key: DEBUG
         value: "false"
     healthCheckPath: /health
+    autoDeploy: true
 
-  # Scraper Worker
+  # ─── Scraper Worker ────────────────────────────────────────
   - type: worker
     name: nedvig-scraper
     runtime: docker
@@ -37,7 +40,9 @@ services:
         value: "true"
       - key: DEBUG
         value: "false"
+    autoDeploy: true
 
+# ─── Database ──────────────────────────────────────────────
 databases:
   - name: nedvig-db
     plan: free

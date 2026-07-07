@@ -1,4 +1,4 @@
-"""Initial schema
+"""Initial schema — uses String columns (not PG enums) for source/status/type.
 
 Revision ID: 001
 Revises:
@@ -15,21 +15,16 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Create enum types
-    op.execute("CREATE TYPE sourcetype AS ENUM ('torgi_gov', 'gosplan')")
-    op.execute("CREATE TYPE auctionstatus AS ENUM ('active', 'upcoming', 'completed', 'cancelled')")
-    op.execute("CREATE TYPE propertytype AS ENUM ('apartment', 'house', 'land', 'commercial', 'room', 'garage', 'other')")
-
-    # auction_properties table
+    # auction_properties — String columns for source/status/type (EnumString in models)
     op.create_table(
         'auction_properties',
         sa.Column('id', sa.Integer(), primary_key=True),
-        sa.Column('source', sa.Enum('torgi_gov', 'gosplan', name='sourcetype'), nullable=False),
+        sa.Column('source', sa.String(50), nullable=False),
         sa.Column('source_id', sa.String(255), nullable=False),
         sa.Column('source_url', sa.Text(), nullable=True),
         sa.Column('title', sa.Text(), nullable=True),
         sa.Column('description', sa.Text(), nullable=True),
-        sa.Column('property_type', sa.Enum('apartment', 'house', 'land', 'commercial', 'room', 'garage', 'other', name='propertytype'), nullable=True),
+        sa.Column('property_type', sa.String(50), nullable=True),
         sa.Column('address', sa.Text(), nullable=True),
         sa.Column('region', sa.String(255), nullable=True),
         sa.Column('city', sa.String(255), nullable=True),
@@ -45,7 +40,7 @@ def upgrade() -> None:
         sa.Column('market_price', sa.Float(), nullable=True),
         sa.Column('price_per_sqm', sa.Float(), nullable=True),
         sa.Column('discount_pct', sa.Float(), nullable=True),
-        sa.Column('auction_status', sa.Enum('active', 'upcoming', 'completed', 'cancelled', name='auctionstatus'), nullable=True),
+        sa.Column('auction_status', sa.String(50), nullable=True),
         sa.Column('auction_date_start', sa.DateTime(), nullable=True),
         sa.Column('auction_date_end', sa.DateTime(), nullable=True),
         sa.Column('publish_date', sa.Date(), nullable=True),
@@ -56,8 +51,8 @@ def upgrade() -> None:
         sa.Column('raw_data', sa.JSON(), nullable=True),
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
         sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
-        sa.Column('is_geocoded', sa.Boolean(), default=False),
-        sa.Column('is_market_appraised', sa.Boolean(), default=False),
+        sa.Column('is_geocoded', sa.Boolean(), server_default=sa.text('false')),
+        sa.Column('is_market_appraised', sa.Boolean(), server_default=sa.text('false')),
     )
 
     # Indexes
@@ -67,23 +62,36 @@ def upgrade() -> None:
     op.create_index('ix_auction_status', 'auction_properties', ['auction_status'])
     op.create_index('ix_coords', 'auction_properties', ['latitude', 'longitude'])
 
-    # scrape_logs table
+    # scrape_logs
     op.create_table(
         'scrape_logs',
         sa.Column('id', sa.Integer(), primary_key=True),
-        sa.Column('source', sa.Enum('torgi_gov', 'gosplan', name='sourcetype'), nullable=False),
+        sa.Column('source', sa.String(50), nullable=False),
         sa.Column('started_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
         sa.Column('finished_at', sa.DateTime(timezone=True), nullable=True),
-        sa.Column('items_found', sa.Integer(), default=0),
-        sa.Column('items_new', sa.Integer(), default=0),
-        sa.Column('items_updated', sa.Integer(), default=0),
+        sa.Column('items_found', sa.Integer(), server_default=sa.text('0')),
+        sa.Column('items_new', sa.Integer(), server_default=sa.text('0')),
+        sa.Column('items_updated', sa.Integer(), server_default=sa.text('0')),
         sa.Column('errors', sa.Text(), nullable=True),
-        sa.Column('status', sa.String(50), default='running'),
+        sa.Column('status', sa.String(50), server_default=sa.text("'running'")),
         sa.Column('proxy_used', sa.String(500), nullable=True),
+    )
+
+    # users
+    op.create_table(
+        'users',
+        sa.Column('id', sa.Integer(), primary_key=True),
+        sa.Column('email', sa.String(255), unique=True, index=True),
+        sa.Column('hashed_password', sa.String(255), nullable=False),
+        sa.Column('name', sa.String(100), server_default=sa.text("''")),
+        sa.Column('role', sa.String(50), server_default=sa.text("'user'")),
+        sa.Column('is_active', sa.Boolean(), server_default=sa.text('true')),
+        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
     )
 
 
 def downgrade() -> None:
+    op.drop_table('users')
     op.drop_table('scrape_logs')
     op.drop_index('ix_coords', 'auction_properties')
     op.drop_index('ix_auction_status', 'auction_properties')
@@ -91,6 +99,3 @@ def downgrade() -> None:
     op.drop_index('ix_publish_date', 'auction_properties')
     op.drop_index('ix_source_source_id', 'auction_properties')
     op.drop_table('auction_properties')
-    op.execute('DROP TYPE IF EXISTS propertytype')
-    op.execute('DROP TYPE IF EXISTS auctionstatus')
-    op.execute('DROP TYPE IF EXISTS sourcetype')
