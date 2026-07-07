@@ -60,8 +60,39 @@ CIAN_REGIONS = {
     "новокузнецк": 28,
     "кемерово": 29,
     "рязань": 30,
+    "тольятти": 31,
+    "астрахань": 33,
+    "пенза": 34,
+    "киров": 36,
+    "липецк": 37,
+    "тула": 38,
+    "курск": 39,
+    "ставрополь": 40,
+    "брянск": 41,
+    "иваново": 43,
+    "мурманск": 44,
     "калининград": 66,
+    "сочи": 68,
     "владимир": 170,
+    "смоленск": 171,
+    "кострома": 172,
+    "белгород": 173,
+    "орёл": 174,
+    "магнитогорск": 176,
+    "сургут": 177,
+    "нижневартовск": 178,
+    "йошкар-ола": 179,
+    "сыктывкар": 180,
+    "владикавказ": 182,
+    "грозный": 183,
+    "череповец": 187,
+    "волжский": 188,
+    "подольск": 190,
+    "одинцово": 191,
+    "мытищи": 192,
+    "королёв": 193,
+    "люберцы": 194,
+    "красногорск": 195,
 }
 
 # Offer type mapping
@@ -343,21 +374,58 @@ class CianScraper(BaseScraper):
         return prices
 
     def _extract_prices_json(self, soup: BeautifulSoup) -> list[float]:
-        """Try to extract prices from embedded JSON data."""
+        """Try to extract prices from embedded JSON data (__NEXT_DATA__ or similar)."""
         prices = []
 
-        scripts = soup.find_all("script", type="application/json")
-        for script in scripts:
+        # Strategy 1: __NEXT_DATA__ (CIAN uses Next.js)
+        next_data_script = soup.find("script", {"id": "__NEXT_DATA__"})
+        if next_data_script and next_data_script.string:
             try:
-                data = json.loads(script.string)
+                data = json.loads(next_data_script.string)
                 offers = self._find_offers_in_json(data)
                 for offer in offers:
-                    price = offer.get("price") or offer.get("bargainTerms", {}).get("price")
-                    area = offer.get("totalArea")
+                    price = None
+                    area = None
+                    # Try various price fields
+                    for field in ["price", "bargainTerms.price", "bargainTerms.priceRur"]:
+                        parts = field.split(".")
+                        val = offer
+                        for part in parts:
+                            if isinstance(val, dict):
+                                val = val.get(part)
+                            else:
+                                val = None
+                                break
+                        if val:
+                            try:
+                                price = float(str(val).replace(" ", ""))
+                                break
+                            except (ValueError, TypeError):
+                                pass
+                    # Try area fields
+                    for field in ["totalArea", "area", "total_area"]:
+                        area = offer.get(field)
+                        if area:
+                            break
                     if price and area and area > 0:
                         prices.append(price / area)
-            except (json.JSONDecodeError, AttributeError):
-                continue
+            except (json.JSONDecodeError, AttributeError) as e:
+                logger.debug(f"[CIAN] __NEXT_DATA__ parse error: {e}")
+
+        # Strategy 2: Any script with application/json
+        if not prices:
+            scripts = soup.find_all("script", type="application/json")
+            for script in scripts:
+                try:
+                    data = json.loads(script.string)
+                    offers = self._find_offers_in_json(data)
+                    for offer in offers:
+                        price = offer.get("price") or offer.get("bargainTerms", {}).get("price")
+                        area = offer.get("totalArea")
+                        if price and area and area > 0:
+                            prices.append(float(price) / float(area))
+                except (json.JSONDecodeError, AttributeError):
+                    continue
 
         return prices
 
