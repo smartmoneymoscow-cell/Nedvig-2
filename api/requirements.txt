@@ -11,7 +11,7 @@ alembic==1.13.2
 aiosqlite==0.20.0
 
 # Auth
-pydantic==2.9.1
+pydantic[email]==2.9.1
 pydantic-settings==2.5.2
 
 # Utils
