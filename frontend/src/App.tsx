@@ -6,6 +6,7 @@ import Sidebar from './components/Sidebar'
 import DetailPanel from './components/DetailPanel'
 import Header from './components/Header'
 import StatsBar from './components/StatsBar'
+import CityPopup from './components/CityPopup'
 import type { MapPoint, Filters } from './types'
 
 export default function App() {
@@ -17,7 +18,7 @@ export default function App() {
     queryKey: ['mapData', filters],
     queryFn: () => fetchMapData(filters as Record<string, string | number | undefined>),
     retry: 2,
-    staleTime: 5 * 60 * 1000, // 5 min cache
+    staleTime: 5 * 60 * 1000,
   })
 
   const { data: stats } = useQuery({
@@ -31,8 +32,13 @@ export default function App() {
     await triggerScrape()
   }, [])
 
+  const handleCitySelect = useCallback((city: string) => {
+    setFilters(prev => ({ ...prev, city }))
+  }, [])
+
   return (
     <div className={`h-screen flex flex-col overflow-hidden ${dark ? 'dark' : ''}`}>
+      <CityPopup onSelect={handleCitySelect} />
       <Header onScrape={handleScrape} dark={dark} onToggleDark={() => setDark(!dark)} />
       <StatsBar stats={stats} />
       <div className="flex flex-1 overflow-hidden">

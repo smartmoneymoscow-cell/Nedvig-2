@@ -12,6 +12,7 @@ from config import settings
 from database import init_db
 from routes.properties import router as properties_router
 from routes.auth import router as auth_router
+from routes.seed import router as seed_router
 from middleware.rate_limiter import rate_limit_middleware, security_headers_middleware
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -50,6 +51,24 @@ async def lifespan(app: FastAPI):
     log.info("Initializing database...")
     await init_db()
     log.info("✅ Database initialized")
+
+    # Auto-seed if database is empty
+    try:
+        from sqlalchemy import select, func
+        from models import AuctionProperty
+        from database import async_session_factory
+        async with async_session_factory() as session:
+            count = (await session.execute(select(func.count(AuctionProperty.id)))).scalar()
+            if count == 0:
+                log.info("📊 Database empty, running seed...")
+                from routes.seed import _seed_data
+                result = await _seed_data(session)
+                log.info(f"✅ Seeded {result.get('count', 0)} properties")
+            else:
+                log.info(f"📊 Database has {count} properties")
+    except Exception as e:
+        log.warning(f"⚠️ Auto-seed failed (non-fatal): {e}")
+
     yield
 
 
@@ -76,6 +95,7 @@ app.middleware("http")(security_headers_middleware)
 # Routes
 app.include_router(properties_router)
 app.include_router(auth_router)
+app.include_router(seed_router)
 
 
 @app.exception_handler(Exception)

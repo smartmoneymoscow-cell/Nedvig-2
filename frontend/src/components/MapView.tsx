@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import L from 'leaflet'
 import 'leaflet.markercluster'
 import type { MapPoint } from '../types'
@@ -38,12 +38,17 @@ function formatPrice(p: number | null): string {
   return `${p.toFixed(0)} ₽`
 }
 
+function formatDiscount(d: number | null): string {
+  if (d === null || d === undefined) return ''
+  const sign = d > 0 ? '−' : '+'
+  return `${sign}${Math.abs(d).toFixed(1)}%`
+}
+
 export default function MapView({ points, loading, onSelect }: Props) {
   const mapRef = useRef<L.Map | null>(null)
   const clusterRef = useRef<L.MarkerClusterGroup | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-  const pointsRef = useRef<MapPoint[]>([])
-  pointsRef.current = points
+  const [mapReady, setMapReady] = useState(false)
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
@@ -52,7 +57,13 @@ export default function MapView({ points, loading, onSelect }: Props) {
       center: [55.7558, 37.6173],
       zoom: 10,
       zoomControl: true,
+      scrollWheelZoom: false, // Fix: map won't hijack page scroll
+      preferCanvas: true, // Better performance
     })
+
+    // Enable scroll zoom only on click/focus
+    map.on('click', () => { map.scrollWheelZoom.enable() })
+    map.on('mouseout', () => { map.scrollWheelZoom.disable() })
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
@@ -63,18 +74,20 @@ export default function MapView({ points, loading, onSelect }: Props) {
       maxClusterRadius: 60,
       spiderfyOnMaxZoom: true,
       showCoverageOnHover: false,
+      chunkedLoading: true, // Better performance
     })
     map.addLayer(cluster)
 
     mapRef.current = map
     clusterRef.current = cluster
+    setMapReady(true)
 
     return () => { map.remove(); mapRef.current = null }
   }, [])
 
   useEffect(() => {
     const cluster = clusterRef.current
-    if (!cluster) return
+    if (!cluster || !mapReady) return
 
     cluster.clearLayers()
 
@@ -84,18 +97,37 @@ export default function MapView({ points, loading, onSelect }: Props) {
       const icon = makeIcon(color, big)
       const marker = L.marker([p.lat, p.lon], { icon })
 
+      // Hover tooltip with property info
+      const tooltipHtml = `
+        <div style="min-width:200px;max-width:280px;font-family:'Source Sans 3',system-ui,sans-serif;line-height:1.4">
+          <div style="font-size:13px;font-weight:600;margin-bottom:4px;color:#111">${p.title || 'Объект'}</div>
+          <div style="font-size:16px;font-weight:700;color:#059669;margin-bottom:2px">${formatPrice(p.price)}</div>
+          ${p.market_price ? `<div style="font-size:11px;color:#6b7280">Рынок: ${formatPrice(p.market_price)}${p.discount_pct !== null ? ` <span style="color:${p.discount_pct > 0 ? '#16a34a' : '#dc2626'};font-weight:600">(${formatDiscount(p.discount_pct)})</span>` : ''}</div>` : ''}
+          <div style="font-size:11px;color:#9ca3af;margin-top:4px">${p.type || ''}${p.area ? ` · ${p.area} м²` : ''}${p.rooms ? ` · ${p.rooms} комн.` : ''}</div>
+          ${p.source ? `<div style="font-size:10px;color:#9ca3af;margin-top:2px">Источник: ${p.source}</div>` : ''}
+        </div>
+      `
+
+      marker.bindTooltip(tooltipHtml, {
+        direction: 'top',
+        offset: [0, -20],
+        className: 'property-tooltip',
+        opacity: 0.95,
+      })
+
+      // Click popup with full info
       const disc = p.discount_pct !== null && p.discount_pct !== undefined
-        ? `<div style="margin-top:4px"><span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:700;background:${p.discount_pct > 0 ? '#dcfce7' : '#fee2e2'};color:${p.discount_pct > 0 ? '#16a34a' : '#dc2626'}">${p.discount_pct > 0 ? '−' : '+'}${Math.abs(p.discount_pct).toFixed(1)}%</span></div>`
+        ? `<div style="margin-top:4px"><span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:700;background:${p.discount_pct > 0 ? '#dcfce7' : '#fee2e2'};color:${p.discount_pct > 0 ? '#16a34a' : '#dc2626'}">${formatDiscount(p.discount_pct)}</span></div>`
         : ''
 
       marker.bindPopup(`
-        <div style="min-width:220px;font-family:'Source Sans 3',system-ui,sans-serif">
+        <div style="min-width:240px;font-family:'Source Sans 3',system-ui,sans-serif">
           <div style="font-size:14px;font-weight:600;margin-bottom:6px">${p.title || '—'}</div>
           <div style="font-family:'Playfair Display',serif;font-size:18px;font-weight:700;color:#059669">${formatPrice(p.price)}</div>
           ${p.market_price ? `<div style="font-size:12px;color:#6b7280;margin-top:2px">Рынок: ${formatPrice(p.market_price)}</div>` : ''}
           ${disc}
           <div style="font-size:12px;color:#6b7280;margin-top:6px">${p.type || '—'}${p.area ? ` · ${p.area} м²` : ''}${p.rooms ? ` · ${p.rooms} комн.` : ''}</div>
-          ${p.url ? `<a href="${p.url}" target="_blank" style="display:inline-block;margin-top:8px;font-size:12px;color:#2563eb">Открыть →</a>` : ''}
+          ${p.url ? `<a href="${p.url}" target="_blank" style="display:inline-block;margin-top:8px;font-size:12px;color:#2563eb">Открыть на сайте →</a>` : ''}
         </div>
       `)
 
@@ -111,7 +143,7 @@ export default function MapView({ points, loading, onSelect }: Props) {
         mapRef.current?.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 })
       }
     }
-  }, [points, onSelect])
+  }, [points, onSelect, mapReady])
 
   return (
     <div className="w-full h-full relative">

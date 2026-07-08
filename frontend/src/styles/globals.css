@@ -62,3 +62,25 @@ body {
 .detail-scroll::-webkit-scrollbar-track { background: transparent; }
 .detail-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
+/* Property tooltip on map hover */
+.property-tooltip {
+  background: white !important;
+  border: none !important;
+  border-radius: 8px !important;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.15) !important;
+  padding: 10px 14px !important;
+}
+.property-tooltip::before {
+  border-top-color: white !important;
+}
+.leaflet-tooltip-top::before {
+  border-top-color: white !important;
+}
+.dark .property-tooltip {
+  background: #1f2937 !important;
+  color: #f9fafb !important;
+}
+.dark .property-tooltip::before {
+  border-top-color: #1f2937 !important;
+}
+
