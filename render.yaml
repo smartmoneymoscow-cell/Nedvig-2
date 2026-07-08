@@ -3,7 +3,7 @@ services:
   - type: web
     name: nedvig-api
     runtime: docker
-    dockerfilePath: ./api/Dockerfile
+    dockerfilePath: ./Dockerfile
     dockerContext: ./api
     envVars:
       - key: DATABASE_URL
@@ -24,7 +24,7 @@ services:
   - type: worker
     name: nedvig-scraper
     runtime: docker
-    dockerfilePath: ./scraper-worker/Dockerfile
+    dockerfilePath: ./Dockerfile
     dockerContext: ./scraper-worker
     envVars:
       - key: DATABASE_URL
