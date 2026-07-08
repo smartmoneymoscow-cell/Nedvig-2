@@ -2,7 +2,8 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    # Database
+    # Database — Render injects DATABASE_URL; fallback to individual vars for local dev
+    DATABASE_URL: str = ""
     DB_HOST: str = "localhost"
     DB_PORT: int = 5432
     DB_NAME: str = "estate_auction"
@@ -10,12 +11,25 @@ class Settings(BaseSettings):
     DB_PASSWORD: str = "postgres"
 
     @property
-    def DATABASE_URL(self) -> str:
-        return f"postgresql+asyncpg://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+    def _resolved_db_url(self) -> str:
+        """Return raw postgresql:// URL: prefer DATABASE_URL env var, else build from parts."""
+        if self.DATABASE_URL:
+            return self.DATABASE_URL
+        return f"postgresql://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+
+    @property
+    def DATABASE_URL_ASYNC(self) -> str:
+        url = self._resolved_db_url
+        if "+asyncpg" not in url:
+            url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return url
 
     @property
     def DATABASE_URL_SYNC(self) -> str:
-        return f"postgresql+psycopg2://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+        url = self._resolved_db_url
+        if "+psycopg2" not in url:
+            url = url.replace("postgresql://", "postgresql+psycopg2://", 1)
+        return url
 
     # Security
     ADMIN_API_KEY: str = ""
@@ -40,7 +54,7 @@ class Settings(BaseSettings):
     def effective_db_url(self) -> str:
         if self.USE_SQLITE:
             return f"sqlite+aiosqlite:///{self.SQLITE_PATH}"
-        return self.DATABASE_URL
+        return self.DATABASE_URL_ASYNC
 
     @property
     def effective_db_url_sync(self) -> str:
